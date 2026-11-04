@@ -10,8 +10,8 @@ description: Use when a dbt build, Airflow task or Trino query fails, or when a 
 1. **Reproduce.** Write down the exact dt, model, command and error, or the two numbers that disagree. Re-run once
    to rule out a transient failure (Trino node loss, S3 throttling).
 2. **Locate the layer.** Trace lineage downward, ADS → DWS → DWD → DIM/ODS → source (`dbt ls --select +<model>`).
-   At each hop, compare row count and one amount for the same dt. The first hop that disagrees is where the defect
-   is.
+   At each hop, compare row count and one amount for the same dt; between ODS and an event DWD, use the event-day
+   query of `12-data-quality.md` STD-12-03. The first hop that disagrees is where the defect is.
 3. **Classify the cause:**
 
    | Area | Typical causes |

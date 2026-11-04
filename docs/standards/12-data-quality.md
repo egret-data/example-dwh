@@ -81,17 +81,30 @@ Source: Spec §7
 ### STD-12-03 Reconciliation (MUST)
 
 For each changed dt, compare ODS and DWD row counts and one amount, and compare DWD and DWS totals. The numbers
-match, or the difference is explained by a documented filter. Dev schemas are `<target schema>_<layer>` (for example
+match, or the difference is explained by a documented filter. For an event DWD (STD-05-08), the ODS side of dt D is
+the earliest version of each key whose event timestamp falls in D, read from every ODS partition from D on. Dev
+schemas are `<target schema>_<layer>` (for example
 `dev_ods`); prod uses the layer name, as in the example. Record the numbers in the change description. Exact
 functions only: approximate ones are for ADS (STD-10-06).
 
 Correct:
 
 ```sql
+with ods_events as (
+    select
+        total_amount,
+        row_number() over (partition by order_id order by dt) as version_rank
+    from ods.ods_shop_orders_di
+    where
+        dt >= date '2026-11-02'
+        and created_at >= timestamp '2026-11-02 00:00:00 Asia/Ho_Chi_Minh'
+        and created_at < timestamp '2026-11-03 00:00:00 Asia/Ho_Chi_Minh'
+)
+
 select
-    (select count(*) from ods.ods_shop_orders_di where dt = date '2026-11-02') as ods_rows,
+    (select count(*) from ods_events where version_rank = 1) as ods_rows,
     (select count(*) from dwd.dwd_trade_order_di where dt = date '2026-11-02') as dwd_rows,
-    (select sum(total_amount) from ods.ods_shop_orders_di where dt = date '2026-11-02') as ods_amt,
+    (select sum(total_amount) from ods_events where version_rank = 1) as ods_amt,
     (select sum(order_amt) from dwd.dwd_trade_order_di where dt = date '2026-11-02') as dwd_amt
 ```
 
