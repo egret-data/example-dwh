@@ -32,3 +32,15 @@ repos:
         language: system
         files: ^(dags/dbt/|warehouse/)
         require_serial: true  # one `make manifest` at a time: parallel batches race on dbt deps
+      - id: dwh-sync-agents
+        name: dwh sync-agents --check (generated AI files match AGENTS.md and skills/)
+        entry: uv run --locked --project tools/dwh dwh sync-agents --check
+        language: system
+        pass_filenames: false
+        files: ^(AGENTS\.md|skills/|CLAUDE\.md|GEMINI\.md|\.claude/|\.cursor/|\.github/copilot-instructions\.md)
+      - id: dwh-check-standards
+        name: dwh check-standards
+        entry: uv run --locked --project tools/dwh dwh check-standards --require-all
+        language: system
+        pass_filenames: false
+        files: ^(docs/standards/|tools/dwh/src/dwh/codes\.py)

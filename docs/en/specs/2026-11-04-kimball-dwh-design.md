@@ -221,7 +221,7 @@ machine-checked cites its lint code (e.g. `DWH-N01`) so humans and AI refer to t
 | `01-layers.md` | Role of each layer and **dependency rules**: ODS ← source; DIM/DWD ← ODS (and DIM); DWS ← DWD + DIM, or a coarser-grain DWS built on a finer existing DWS; ADS ← DWS and DIM (DWD allowed with a written reason in the model `.yml`, `meta.dwd_reason`). An accumulating snapshot reads transaction facts, not ODS. No upward reads. Only ODS may call `source()`. Dependency chains inside DIM/DWD/DWS are at most 10 models deep (Alibaba). BI reads DWD + DIM (D13). |
 | `02-naming.md` | `ods_{source}_{table}_{di\|df}` · `dim_pub_{dimension}` (shared across domains) / `dim_{domain}_{dimension}` (one domain) · `dwd_{domain}_{process}_{di\|df}` · `dws_{domain}_{grain}[_{custom}]_{period}` with period one of `1d\|nd\|td\|1w\|hh\|mm` · `ads_{app}_{subject}[_{period}]` (period, when present, one of `1d\|nd\|td\|1w\|hh\|mm`). History tables add `_hist`. Column suffixes: `_id` natural ids, `_key` surrogate/durable keys, `is_` flags, `_date` dates, `_at` timestamps, `_amt` money, `_cnt` counts. Every name segment must exist in `glossary.yml`. Alibaba's slot after `dim_`/`dwd_` is the business segment; here it is `pub` or the domain (D10), and the file says so. |
 | `03-domains-bus-matrix.md` | How to divide domains (by department, business process or functional module; keep them extensible) and processes; how to build the bus matrix; what counts as model-extending. |
-| `04-dimensions.md` | Conformed dimensions. **SCD4 (D11):** `dim_*` = one current row per natural key, keyed by the durable key `hash(natural key)` (`dbt_utils.generate_surrogate_key`); `dim_*_hist` = all versions from a dbt snapshot with `valid_from`, `valid_to`, `is_current`. SCD1 dims are just `dim_*`. SCD2 with a per-version key only as a documented exception. Mini-dimension for fast-changing attributes. Special members, keys of the same `varchar` type as hash keys: `'-1'` unknown (natural key null or not found), `'-2'` not applicable. **Late-arriving dimensions:** a fact whose natural key is not yet in the dim still gets its durable key (hash of the natural key, so no rewrite is needed later) and the dim inserts an *inferred member* with placeholder attributes, flagged `is_inferred`, that is overwritten when the real row arrives. `dim_pub_date` is mandatory (one row per calendar day, VN calendar). DIM tables SHOULD stay ≤ 10M rows and SHOULD be a daily full-snapshot partition (Alibaba); larger ones need a written reason. Role-playing, junk dimensions; *degenerate dimension* means a transaction identifier kept on the fact with no dim table (Kimball sense). |
+| `04-dimensions.md` | Conformed dimensions. **SCD4 (D11):** `dim_*` = one current row per natural key, keyed by the durable key `hash(natural key)` (`dbt_utils.generate_surrogate_key`); `dim_*_hist` = all versions: a dbt snapshot of the current `dim_*`, keyed by the durable key, with `valid_from` / `valid_to` (`is_current` is derived as `valid_to is null`). SCD1 dims are just `dim_*`. SCD2 with a per-version key only as a documented exception. Mini-dimension for fast-changing attributes. Special members, keys of the same `varchar` type as hash keys: `'-1'` unknown (natural key null or not found), `'-2'` not applicable. **Late-arriving dimensions:** a fact whose natural key is not yet in the dim still gets its durable key (hash of the natural key, so no rewrite is needed later) and the dim inserts an *inferred member* with placeholder attributes, flagged `is_inferred`, that is overwritten when the real row arrives. `dim_pub_date` is mandatory (one row per calendar day, VN calendar). DIM tables SHOULD stay ≤ 10M rows and SHOULD be a daily full-snapshot partition (Alibaba); larger ones need a written reason. Role-playing, junk dimensions; *degenerate dimension* means a transaction identifier kept on the fact with no dim table (Kimball sense). |
 | `05-facts.md` | Transaction / periodic snapshot / accumulating snapshot; mandatory grain statement; one grain per table; all measures in the same unit; explicit null policy for measures; additive / semi-additive / non-additive measures, with non-additive measures stored as numerator + denominator. **Fact ↔ SCD join (D11):** facts store durable keys; an attribute marked `historical` is resolved in DWD by joining `dim_*_hist` on `durable_key` and `event_at` within `[valid_from, valid_to)`, and stored on the fact; `current` attributes are read from `dim_*` at query time. *Dimension denormalization* (Alibaba's "degenerating" DIM attributes into DWD) is allowed for frequently used attributes and is a different thing from a degenerate dimension; the file uses the two names consistently. |
 | `06-metrics.md` | Atomic = process + measure + aggregation; derived = period + modifiers + atomic + grain; calculated = formula (Kimball extension). Metric column template `{modifier}_{atomic}_{agg}_{period}`, modifier optional (e.g. `app_pay_amt_sum_30d`, `pay_order_cnt_1d`). Ratios and other non-additive results are `calculated` metrics over stored numerator/denominator columns. `metrics.yml` schema. |
 | `07-dws-ads.md` | DWS grain by dimension; **one statistical period per DWS table**, default triple `_1d` / `_nd` / `_td`; every DWS metric column maps to a derived metric. A DWS table is built only when it has ≥ 2 consumers or recorded performance evidence (baseline from `dwh-verify`); otherwise consumers read DWD + DIM. ADS serves one stated application need and names its consumer (D13). |
@@ -250,7 +250,7 @@ instructed to open `skills/dwh-start/SKILL.md` first for any data change.
 
 ### 8.1 Two enforcement layers
 
-1. **pre-commit** (local / inside the AI session): `dwh lint --changed`, `sqlfluff`, `dwh sync-agents --check`, `ruff`.
+1. **pre-commit** (local / inside the AI session): `dwh lint --changed`, `sqlfluff`, `dwh sync-agents --check`, `ruff`. The hooks `sqlfluff`, `dwh lint --changed` and `dwh sync-agents --check` are local hooks with no network clone.
 2. **GitHub Actions** (required to merge):
    - `dwh lint` — YAML ↔ dbt cross-checks. Rule families:
      - `DWH-N*` naming, including one valid period suffix per DWS table
@@ -261,6 +261,7 @@ instructed to open `skills/dwh-start/SKILL.md` first for any data change.
      - `DWH-D*` descriptions present
      - `DWH-S*` every source table declares load type, watermark, source timezone and delete handling; a `di` load with `none` delete handling requires a written reason
      - `DWH-Y*` warehouse YAML: JSON Schema (Y01) and cross-file consistency (Y02–Y06)
+     - `DWH-R*` rulebook format and lint-code citations (`dwh check-standards`)
    - Design gate check (§6.3) (`dwh design-gate`, codes `DWH-G*`, workflow `design-gate.yml`).
    - `dbt build --select state:modified+ --defer` on a CI Trino schema `ci_pr_<n>`, deferring to
      production, limited to recent `dt`s.
@@ -282,6 +283,8 @@ Skills are written test-first (superpowers:writing-skills): scenarios exist befo
   - pressure scenario ("urgent, just write the SQL") → still classifies the change first.
 - Each scenario runs headless on Claude Code (`claude -p`) and one other tool (Codex or Cursor CLI);
   graded by `dwh lint` plus a checklist. Re-run on every skill change.
+
+`evals/run.sh` (plan 3) runs one scenario headless with `claude -p` on any commit; plan 4 adds automated grading and a second tool.
 
 ## 9. Delivery plan
 
@@ -327,3 +330,5 @@ Each step gets its own implementation plan (writing-plans), executed in order:
   must contain the word `airflow`.
 - Plan 2 review (user decision): ADS may read DIM; the ADS period suffix is optional.
 - **Plan 2:** DWH-Y and DWH-G code families added; catalogue on GitHub Pages.
+- **Plan 3:** SCD4 `_hist` is a snapshot of the current DIM (DWH-L04 lets snapshots read DIM); DWH-R family;
+  sqlfluff with the jinja templater and a stub `get_dt`; `evals/run.sh`.

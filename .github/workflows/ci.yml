@@ -21,6 +21,8 @@ jobs:
       - run: make dwh-test
       - run: make validate
       - run: make dwh-lint
+      - run: make check-standards
+      - run: make sync-agents-check
 
   stack:
     runs-on: ubuntu-24.04

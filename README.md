@@ -64,6 +64,59 @@ and any finding makes the command exit 1. Families:
 - `G` design gate for model-extending changes; runs only in `.github/workflows/design-gate.yml`
   (`dwh design-gate`), not in `make dwh-lint`
 
+## Working with AI tools and the rulebook
+
+`AGENTS.md` is the entry point for every AI coding tool and for people. These files are generated from it and from
+`skills/` and are read-only: `CLAUDE.md`, `GEMINI.md`, `.claude/skills/`, `.cursor/rules/` and
+`.github/copilot-instructions.md`. Edit `AGENTS.md` or `skills/`, then run `make sync-agents`; CI fails on drift
+(`make sync-agents-check`).
+
+The eight skills in `skills/` and when each applies:
+
+| Skill | Use when |
+|-------|----------|
+| `dwh-start` | any data change request, before anything else |
+| `dwh-requirement` | the change is model-extending, or its process, grain, dimensions or metrics are unclear |
+| `dwh-model-design` | updating `warehouse/*.yml` and table specifications, before SQL |
+| `dwh-implement` | writing or changing dbt models, snapshots, tests or DAGs |
+| `dwh-verify` | before saying a change is done, opening a PR or reporting numbers |
+| `dwh-review` | reviewing a data PR, your own or someone else's |
+| `dwh-debug` | a build, task or query fails, or numbers do not match |
+| `dwh-backfill` | past `dt` partitions must be rebuilt |
+
+The rulebook is `docs/standards/` (`00`-`12`). Every rule has an ID `STD-NN-MM`, and `make check-standards` checks the
+format and that every lint code it cites exists (DWH-R).
+
+`dwh scaffold` prints (or, with `--write`, creates) the files of a new model from the design in `warehouse/*.yml`,
+with empty descriptions so that `dwh lint` fails until you fill them. One example per layer:
+
+```bash
+dwh="uv run --project tools/dwh dwh"
+$dwh scaffold ods_shop_orders_di --grain order_id
+$dwh scaffold dim_pub_customer --from ods_shop_customers_df          # also writes dim_pub_customer_hist
+$dwh scaffold dwd_trade_order_di --from ods_shop_orders_di --grain order_id
+$dwh scaffold dws_trade_customer_1d --from dwd_trade_order_di --grain customer_key --metric order_amt_sum_1d order_cnt_1d
+$dwh scaffold ads_bi_customer_daily --from dws_trade_customer_1d --grain customer_key --metric order_amt_sum_1d avg_order_amt_1d
+```
+
+Style and hooks:
+
+```bash
+make sql-lint            # sqlfluff on dags/dbt/models
+make pre-commit-install  # install the git hook
+make pre-commit          # run every hook on all files
+```
+
+To test a change to a skill, run its scenario (`evals/scenarios/`) headless, first on the old commit (RED: the agent
+should fail) and then on the new one (GREEN: it should pass), and grade the answers by hand:
+
+```bash
+./evals/run.sh new-source-crm --ref <old-commit>   # RED
+./evals/run.sh new-source-crm                      # GREEN, at HEAD
+```
+
+Answers go to `evals/results/` (git-ignored). Plan 4 adds automated grading and a second tool.
+
 ## How it runs in production
 
 - git-sync clones this repo to `/opt/airflow/dags/repo`; Airflow parses only `dags/`.
