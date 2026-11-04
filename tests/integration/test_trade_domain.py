@@ -146,3 +146,19 @@ def test_lifecycle_has_one_row_per_order_and_marks_unpaid_orders():
     assert [r[0] for r in rows] == [1, 2, 3, 4, 5, 6]
     assert {r[0] for r in rows if r[1]} == {1, 2, 3, 5}
     assert [r[2] for r in rows if not r[1]] == ["-2", "-2"]
+
+
+def test_lifecycle_order_paid_on_a_later_day_keeps_its_placed_day_and_payment():
+    rows = query(
+        "SELECT dt, pay_amt, pay_date_key FROM "
+        f"{table('dwd', 'dwd_trade_order_lifecycle_di')} WHERE order_id = 2"
+    )
+    assert [(r[0].isoformat(), int(r[1]), r[2] != "-2") for r in rows] == [("2026-11-01", 80000, True)]
+
+
+def test_rerunning_an_old_day_alone_does_not_regress_later_payments():
+    build("2026-11-01", *DOWNSTREAM)
+    rows = query(
+        f"SELECT is_paid, pay_amt, dt FROM {table('dwd', 'dwd_trade_order_lifecycle_di')} WHERE order_id = 2"
+    )
+    assert [(r[0], int(r[1]), r[2].isoformat()) for r in rows] == [(True, 80000, "2026-11-01")]

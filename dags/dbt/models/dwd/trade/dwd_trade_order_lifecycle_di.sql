@@ -41,9 +41,9 @@ payments as (
         min(paid_at)                         as paid_at,
         cast(sum(pay_amt) as decimal(18, 2)) as pay_amt
     from {{ ref('dwd_trade_payment_di') }}
-    where
-        dt <= date '{{ get_dt() }}'
-        and order_id in (select order_id from touched)
+    -- All payments, not only up to dt: the row holds the order's current state. A payment whose order is not
+    -- in the order DWD yet is picked up when the order day is re-run (STD-05-08 late rows).
+    where order_id in (select order_id from touched)
     group by order_id
 )
 
