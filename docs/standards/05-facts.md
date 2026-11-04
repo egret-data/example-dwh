@@ -157,27 +157,29 @@ the unknown value, or seed the history before backfilling. No lint code checks t
 Correct:
 
 ```sql
+-- versions: the event-day ODS rows of STD-05-08
 select
     o.order_id,
     c.city as customer_city
-from {{ ref('ods_shop_orders_di') }} as o
+from versions as o
 left join {{ ref('dim_pub_customer_hist') }} as c
     on c.customer_key = {{ dbt_utils.generate_surrogate_key(['o.customer_id']) }}
     and o.created_at >= c.valid_from
     and (o.created_at < c.valid_to or c.valid_to is null)
-where o.dt = date '{{ get_dt() }}'
+where o.version_rank = 1
 ```
 
 Incorrect:
 
 ```sql
+-- versions: the event-day ODS rows of STD-05-08
 select
     o.order_id,
     c.city as customer_city
-from {{ ref('ods_shop_orders_di') }} as o
+from versions as o
 left join {{ ref('dim_pub_customer_hist') }} as c
     on c.customer_key = {{ dbt_utils.generate_surrogate_key(['o.customer_id']) }}   -- no time condition: one row per version
-where o.dt = date '{{ get_dt() }}'
+where o.version_rank = 1
 ```
 
 Source: Kimball (type 4 history lookup) · Spec §2
@@ -237,3 +239,66 @@ from {{ ref('dwd_trade_order_di') }}
 ```
 
 Source: Alibaba data-warehouse-detail-layer
+
+### STD-05-08 Facts from updated-in-place sources (MUST)
+
+A `di` ODS of a source that updates rows in place holds the rows *changed* on each dt, so one order appears in every
+partition where it changed. A transaction DWD built from it is an event fact. Its `dt` is the Asia/Ho_Chi_Minh day of
+the event timestamp, for example `created_at`, never the day of a change. A run for dt D reads the ODS rows whose
+event timestamp falls in day D, from every ODS partition `dt >= D` that exists at run time. It keeps one row per grain
+key: the earliest ODS version, `row_number() over (partition by <grain> order by dt) = 1`, which is the state at the
+end of the event day. The event fact does not change afterwards. A row created on D but first loaded later is picked
+up by re-running D (skill `dwh-backfill`). Later changes, such as status, paid and shipped milestones, belong in an
+accumulating snapshot DWD, which merges milestone events from the transaction DWDs by key
+(`incremental_strategy='merge'`, `unique_key` = the process key; STD-01-05, STD-08-05). `dwh scaffold` writes the
+event shape for a transaction DWD when given `--event-at`, and refuses an accumulating snapshot.
+
+Correct:
+
+```sql
+-- dwd_trade_order_di: process order is a transaction; dt is the Vietnam day of created_at
+with versions as (
+    select
+        order_id,
+        customer_id,
+        total_amount,
+        created_at,
+        dt,
+        row_number() over (partition by order_id order by dt) as version_rank
+    from {{ ref('ods_shop_orders_di') }}
+    where
+        dt >= date '{{ get_dt() }}'
+        and {{ in_business_day_tz('created_at') }}
+)
+
+select
+    order_id,
+    case
+        when customer_id is null then '-1'
+        else {{ dbt_utils.generate_surrogate_key(['customer_id']) }}
+    end                   as customer_key,
+    total_amount          as order_amt,
+    created_at,
+    date '{{ get_dt() }}' as dt
+from versions
+where version_rank = 1
+```
+
+Incorrect:
+
+```sql
+-- dwd_trade_order_di: one DWD row per ODS change partition
+select
+    order_id,
+    case
+        when customer_id is null then '-1'
+        else {{ dbt_utils.generate_surrogate_key(['customer_id']) }}
+    end                   as customer_key,
+    total_amount          as order_amt,
+    created_at,
+    date '{{ get_dt() }}' as dt
+from {{ ref('ods_shop_orders_di') }}
+where dt = date '{{ get_dt() }}'   -- an order changed on three days lands in three dts and is summed three times
+```
+
+Source: Kimball (transaction and accumulating snapshot fact tables) · Spec §11
