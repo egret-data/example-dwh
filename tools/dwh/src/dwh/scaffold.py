@@ -90,7 +90,7 @@ $members
 DWD_SQL = Template(
     """$config
 -- Process $process. Grain: $grain_sentence
--- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. order_date).
+-- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. ship_date).
 ${joins}select
 $columns
 from {{ ref('$upstream') }}
@@ -100,7 +100,8 @@ where dt = date '{{ get_dt() }}'
 DWD_EVENT_SQL = Template(
     """$config
 -- Process $process. Grain: $grain_sentence
--- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. order_date).
+-- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. ship_date;
+-- a single date role is derived from the event column).
 -- Event fact (STD-05-08): dt is the Vietnam day of $event_at. A run reads every ODS partition from dt on
 -- and keeps the earliest version of each grain key: the state at the end of the event day.
 ${joins}with versions as (
@@ -343,6 +344,7 @@ def _dim(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
     natural = dimension["natural_key"]
     attributes = [a["name"] for a in dimension["attributes"]]
     if dimension["history"] == "scd4" and "updated_at" not in attributes:
+        # The upstream must expose the source change time as `updated_at` (ODS convention).
         # The source's change time drives the snapshot's valid_from (STD-04-03).
         attributes.append("updated_at")
     tag = f"domain:{scope}"

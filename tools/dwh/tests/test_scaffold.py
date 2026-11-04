@@ -245,11 +245,34 @@ def test_dwd_hashes_the_role_column_or_the_natural_key(wh):
     )
     sql = order["models/dwd/trade/dwd_trade_order_di.sql"]
     assert "generate_surrogate_key(['order_date'])" not in sql
-    assert "generate_surrogate_key(['customer_id']) }}" in sql
+    assert re.search(
+        r"when customer_id is null then '-1'\s+"
+        r"else \{\{ dbt_utils.generate_surrogate_key\(\['customer_id'\]\) \}\}"
+        r"\s+end\s+as customer_key",
+        sql,
+    )
     assert (
-        "-- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. order_date)"
+        "-- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. ship_date;"
         in sql
     )
+    assert "a single date role is derived from the event column)" in sql
+
+
+def test_event_dwd_with_two_date_roles_hashes_each_role_column(make_warehouse):
+    def add_ship_date(files):
+        files["bus_matrix"]["bus_matrix"][0]["dimensions"].append({"dimension": "date", "role": "ship_date"})
+
+    wh = load_warehouse(make_warehouse(mutate=add_ship_date))
+    sql = scaffold(
+        "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="created_at"
+    )["models/dwd/trade/dwd_trade_order_di.sql"]
+
+    assert "generate_surrogate_key(['order_date'])" in sql
+    assert "generate_surrogate_key(['ship_date'])" in sql
+    assert "Asia/Ho_Chi_Minh" not in sql
+    versions = sql.split("with versions as (", 1)[1].split("from {{ ref('x') }}", 1)[0]
+    for name in ("order_date", "ship_date"):
+        assert re.search(rf"^\s+{name},$", versions, re.MULTILINE), name
 
 
 def test_dwd_maps_a_null_natural_key_to_the_unknown_member(wh):
@@ -301,7 +324,12 @@ def test_event_dwd_derives_its_single_date_role_from_the_event_column(wh):
         event_at="created_at",
     )["models/dwd/trade/dwd_trade_order_di.sql"]
 
-    assert "cast(created_at at time zone 'Asia/Ho_Chi_Minh' as date)" in sql
+    assert re.search(
+        r"case\s+when created_at is null then '-1'\s+else \{\{ dbt_utils.generate_surrogate_key\(\s*"
+        r"\[\"cast\(created_at at time zone 'Asia/Ho_Chi_Minh' as date\)\"\]\s*\) \}\}"
+        r"\s+end\s+as order_date_key",
+        sql,
+    )
     assert "['order_date']" not in sql
 
 
