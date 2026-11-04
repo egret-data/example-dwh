@@ -88,15 +88,20 @@ The rulebook is `docs/standards/` (`00`-`12`). Every rule has an ID `STD-NN-MM`,
 format and that every lint code it cites exists (DWH-R).
 
 `dwh scaffold` prints (or, with `--write`, creates) the files of a new model from the design in `warehouse/*.yml`,
-with empty descriptions so that `dwh lint` fails until you fill them. One example per layer:
+with empty descriptions so that `dwh lint` fails until you fill them. The design must declare the domain, process,
+dimensions and metrics first; the real `warehouse/` has none yet, so the examples below, one per layer, run against
+the eval fixture design (`--warehouse evals/fixtures/trade/warehouse`) and print the files without writing them:
 
 ```bash
 dwh="uv run --project tools/dwh dwh"
-$dwh scaffold ods_shop_orders_di --grain order_id
-$dwh scaffold dim_pub_customer --from ods_shop_customers_df          # also writes dim_pub_customer_hist
-$dwh scaffold dwd_trade_order_di --from ods_shop_orders_di --grain order_id
-$dwh scaffold dws_trade_customer_1d --from dwd_trade_order_di --grain customer_key --metric order_amt_sum_1d order_cnt_1d
-$dwh scaffold ads_bi_customer_daily --from dws_trade_customer_1d --grain customer_key --metric order_amt_sum_1d avg_order_amt_1d
+wh="--warehouse evals/fixtures/trade/warehouse"
+$dwh scaffold ods_shop_orders_di --grain order_id $wh
+$dwh scaffold dim_pub_customer --from ods_shop_customers_df $wh   # also writes dim_pub_customer_hist
+$dwh scaffold dwd_trade_order_di --from ods_shop_orders_di --grain order_id --event-at created_at $wh
+$dwh scaffold dws_trade_customer_1d --from dwd_trade_order_di --grain customer_key \
+  --metric order_amt_sum_1d order_cnt_1d $wh
+$dwh scaffold ads_bi_customer_daily --from dws_trade_customer_1d --grain customer_key \
+  --metric order_amt_sum_1d avg_order_amt_1d $wh
 ```
 
 Style and hooks:
