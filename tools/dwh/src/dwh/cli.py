@@ -6,6 +6,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from dwh.catalog import write_catalog
 from dwh.design_gate import added_concepts, check_gate, load_warehouse_at
 from dwh.findings import Finding
 from dwh.lint import Context, run_lint
@@ -44,6 +45,15 @@ def cmd_lint(args: argparse.Namespace) -> int:
     if args.select:
         findings = [f for f in findings if f.code.startswith(tuple(args.select))]
     return report(findings)
+
+
+def cmd_catalog(args: argparse.Namespace) -> int:
+    findings = validate(args.warehouse)
+    if findings:
+        return report(findings)
+    index = write_catalog(load_warehouse(args.warehouse), args.out, args.dbt_docs)
+    print(f"wrote {index}")
+    return 0
 
 
 def cmd_design_gate(args: argparse.Namespace) -> int:
@@ -85,6 +95,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--warehouse", type=Path, default=Path("warehouse"))
     p.add_argument("--repo", type=Path, default=Path("."))
     p.set_defaults(func=cmd_design_gate)
+
+    p = sub.add_parser("catalog", help="render the design catalogue as static HTML")
+    p.add_argument("--warehouse", type=Path, default=Path("warehouse"))
+    p.add_argument("--out", type=Path, default=Path("site"))
+    p.add_argument("--dbt-docs", type=Path, default=None, help="dbt's static_index.html to publish alongside")
+    p.set_defaults(func=cmd_catalog)
 
     return parser
 

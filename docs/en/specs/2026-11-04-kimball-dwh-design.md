@@ -164,8 +164,7 @@ YAML files, each validated by a JSON Schema in `warehouse/schemas/`:
 | `glossary.yml` | Root words allowed in table and column names, with meaning and abbreviation. |
 
 CI renders these plus `dbt docs` into a static catalogue (bus matrix, metric dictionary, glossary) on
-merge to `main`. Publishing target (GitHub Pages or internal host) is chosen during implementation of
-plan 2.
+merge to `main`. It is published to GitHub Pages by `.github/workflows/catalog.yml`.
 
 ## 6. Process (skills)
 
@@ -261,7 +260,8 @@ instructed to open `skills/dwh-start/SKILL.md` first for any data change.
      - `DWH-T*` minimum tests per layer present
      - `DWH-D*` descriptions present
      - `DWH-S*` every source table declares load type, watermark, source timezone and delete handling; a `di` load with `none` delete handling requires a written reason
-   - Design gate check (§6.3).
+     - `DWH-Y*` warehouse YAML: JSON Schema (Y01) and cross-file consistency (Y02–Y06)
+   - Design gate check (§6.3) (`dwh design-gate`, codes `DWH-G*`, workflow `design-gate.yml`).
    - `dbt build --select state:modified+ --defer` on a CI Trino schema `ci_pr_<n>`, deferring to
      production, limited to recent `dt`s.
    - pytest DAG integrity: imports, owner and tags set, no duplicate DAG ids.
@@ -300,7 +300,7 @@ Each step gets its own implementation plan (writing-plans), executed in order:
   replacement, Cosmos Asset events for each model run. Not yet measured: whether an event on an asset
   with no consumer DAG yet later triggers a newly added consumer (plan 4). The local stack uses an
   Iceberg JDBC catalog on Postgres; production may use REST/HMS/Nessie.
-- Catalogue publishing target is decided in plan 2.
+- Catalogue: GitHub Pages (plan 2).
 - The reference domain (plan 4) is chosen by the team; until then examples in the rulebook use a
   generic `trade` domain (order, payment).
 - Retention defaults (§4) are a starting point; the team adjusts them per legal and cost needs.
@@ -326,3 +326,4 @@ Each step gets its own implementation plan (writing-plans), executed in order:
   "Assets" and Cosmos `DbtDag`; read-only code volume; dbt 1.11 `arguments:` test syntax; DAG files
   must contain the word `airflow`.
 - Plan 2 review (user decision): ADS may read DIM; the ADS period suffix is optional.
+- **Plan 2:** DWH-Y and DWH-G code families added; catalogue on GitHub Pages.

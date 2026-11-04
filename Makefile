@@ -2,7 +2,7 @@ COMPOSE := docker compose -f dev/compose.yml
 DWH := uv run --locked --project tools/dwh dwh
 RUN := $(COMPOSE) run --rm airflow
 
-.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint
+.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog
 
 dev-up:
 	$(COMPOSE) up -d trino
@@ -64,3 +64,7 @@ manifest:
 
 dwh-lint: manifest
 	$(DWH) lint --warehouse warehouse --manifest .dbt/target/manifest.json
+
+catalog: manifest
+	$(HOST_DBT_ENV) $(HOST_DBT) docs generate --project-dir dags/dbt --no-compile --empty-catalog --static
+	$(DWH) catalog --warehouse warehouse --out site --dbt-docs .dbt/target/static_index.html

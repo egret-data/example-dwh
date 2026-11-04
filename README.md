@@ -37,6 +37,31 @@ docker compose -f dev/compose.yml run --rm airflow \
   'cd dags/dbt && $DBT_EXECUTABLE_PATH build --select tag:ods_shop --vars "{dt: 2026-11-02}"'
 ```
 
+## Design metadata and lint
+
+The design lives in `warehouse/*.yml`; the `dwh` tool in `tools/dwh` checks it and the dbt project.
+
+```bash
+make validate   # warehouse YAML: JSON Schema and cross-file consistency (DWH-Y)
+make dwh-lint   # builds .dbt/target/manifest.json with host-side dbt via uv, then runs all lint families
+make dwh-test   # unit tests of the dwh tool
+make catalog    # renders the design catalogue plus dbt docs into site/
+make lock       # regenerates requirements.lock and requirements-dbt.lock after a change to requirements*.txt
+```
+
+Lint codes are `DWH-<family letter><two digits>`; each finding is one line, `<path>: <code> <message>`,
+and any finding makes the command exit 1. Families:
+
+- `Y` warehouse YAML: schema and cross-file consistency
+- `N` naming
+- `L` layer dependencies and chain depth
+- `M` metrics declared and resolvable
+- `B` bus matrix: every DWD maps to a cell
+- `T` minimum tests per layer
+- `D` descriptions present
+- `S` source tables declare load type, watermark, timezone and delete handling
+- `G` design gate for model-extending changes
+
 ## How it runs in production
 
 - git-sync clones this repo to `/opt/airflow/dags/repo`; Airflow parses only `dags/`.
