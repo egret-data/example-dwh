@@ -50,6 +50,7 @@ where dt = (select max(dt) from {{ ref('$upstream') }})
 DWD_SQL = Template(
     """$config
 -- Process $process. Grain: $grain_sentence
+-- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. order_date).
 ${joins}select
 $columns
 from {{ ref('$upstream') }}
@@ -58,12 +59,11 @@ where dt = date '{{ get_dt() }}'
 )
 DWS_SQL = Template(
     """$config
--- sqlfluff:layout:type:alias_expression:spacing_before:single
 -- One statistical period per table ($period); metric columns follow warehouse/metrics.yml.
 select
 $columns
 from {{ ref('$upstream') }}
-where dt <= date '{{ get_dt() }}'
+where $window
 group by $group_by
 """
 )
@@ -143,10 +143,10 @@ def select_list(items: list[tuple[str, str | None]], *, align: bool = True) -> s
     lines = []
     for index, (expr, alias) in enumerate(items):
         line = f"    {expr.ljust(width)} as {alias}" if alias else f"    {expr}"
-        line += "," if index < len(items) - 1 else ""
-        if len(line.replace("{{ get_dt() }}", "2026-11-02")) > LINE_LENGTH:
-            line += "  -- noqa: LT05"  # a long filter() cannot be split without moving the alias
-        lines.append(line)
+        if len(line.replace("{{ get_dt() }}", "2026-11-02")) > LINE_LENGTH and " filter (where " in expr:
+            head, condition = expr.split(" filter (where ", 1)
+            line = f"    {head} filter (\n        where {condition.removesuffix(')')}\n    ) as {alias}"
+        lines.append(line + ("," if index < len(items) - 1 else ""))
     return "\n".join(lines)
 
 
@@ -164,8 +164,8 @@ def key_dimensions(wh: Warehouse) -> dict[str, dict]:
     return found
 
 
-def surrogate(dimension: dict) -> str:
-    natural = ", ".join(f"'{k}'" for k in dimension["natural_key"])
+def surrogate(columns: list[str]) -> str:
+    natural = ", ".join(f"'{k}'" for k in columns)
     return f"{{{{ dbt_utils.generate_surrogate_key([{natural}]) }}}}"
 
 
@@ -209,6 +209,11 @@ def _dim(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
         raise ScaffoldError(f"{name}: scd2 is a documented exception (spec D11); write it by hand")
     if len(upstream) != 1:
         raise ScaffoldError(f"{name}: --from takes exactly one upstream model for a dimension")
+    historical = [a["name"] for a in dimension["attributes"] if a["history"] == "historical"]
+    if dimension["history"] == "scd4" and not historical:
+        raise ScaffoldError(
+            f"{name}: an scd4 dimension needs at least one historical attribute; use scd1 otherwise"
+        )
     key = f"{dim_name}_key"
     natural = dimension["natural_key"]
     attributes = [a["name"] for a in dimension["attributes"]]
@@ -227,9 +232,6 @@ def _dim(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
         f"{folder}/{name}.yml": models_yml(name, columns, grain=None, contract=True),
     }
     if dimension["history"] == "scd4":
-        historical = [a["name"] for a in dimension["attributes"] if a["history"] == "historical"]
-        if not attributes:
-            raise ScaffoldError(f"{name}: an scd4 dimension needs at least one attribute to track")
         snapshot = {
             "snapshots": [
                 {
@@ -239,7 +241,7 @@ def _dim(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
                     "config": {
                         "unique_key": [key],
                         "strategy": "check",
-                        "check_cols": historical or attributes,
+                        "check_cols": historical,
                         "snapshot_meta_column_names": {
                             "dbt_valid_from": "valid_from",
                             "dbt_valid_to": "valid_to",
@@ -266,8 +268,14 @@ def _dwd(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
         f"{cell.get('role', cell['dimension'])}_key": wh.dimensions[cell["dimension"]]
         for cell in row["dimensions"]
     }
+    hashed = {
+        f"{cell.get('role', cell['dimension'])}_key": [cell["role"]]
+        if "role" in cell
+        else wh.dimensions[cell["dimension"]]["natural_key"]
+        for cell in row["dimensions"]
+    }
     select = [(g, None) for g in grain if g not in keys]
-    select += [(surrogate(dimension), key) for key, dimension in keys.items()]
+    select += [(surrogate(hashed[key]), key) for key in keys]
     select.append((TODAY, "dt"))
     sql = DWD_SQL.substitute(
         config=PARTITION_CONFIG,
@@ -302,14 +310,13 @@ def _dwd(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
     }
 
 
-def period_condition(derived: dict, period: str) -> str | None:
+def table_window(period: str, days: int) -> str:
+    """The `where` clause that bounds the rows a DWS table reads: the widest window of its metrics."""
     if period == "1d":
         return f"dt = {TODAY}"
-    if period == "1w":
-        return f"dt > {TODAY} - interval '7' day"
-    if period == "nd":
-        return f"dt > {TODAY} - interval '{derived['days']}' day"
-    return None  # td: all history up to dt
+    if period == "td":
+        return f"dt <= {TODAY}"
+    return f"dt > {TODAY} - interval '{7 if period == '1w' else days}' day"
 
 
 def _dws(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]:
@@ -323,6 +330,7 @@ def _dws(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
     dims = key_dimensions(wh)
     select = [(g, None) for g in grain]
     metric_columns = []
+    widest = max((wh.derived[m].get("days", 0) for m in metrics if m in wh.derived), default=0)
     for metric in metrics:
         derived = wh.derived.get(metric)
         if derived is None:
@@ -336,9 +344,8 @@ def _dws(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
             raise ScaffoldError(f"{metric}: {atomic['aggregation']} metrics are not stored in DWS (DWH-M02)")
         expression = AGGREGATE[atomic["aggregation"]].format(measure=atomic["name"])
         conditions = [wh.modifiers[m]["predicate"] for m in derived.get("modifiers", [])]
-        window = period_condition(derived, period)
-        if window:
-            conditions.append(window)
+        if period == "nd" and derived["days"] < widest:
+            conditions.append(f"dt > {TODAY} - interval '{derived['days']}' day")
         if conditions:
             expression += f" filter (where {' and '.join(conditions)})"
         select.append((expression, metric))
@@ -348,6 +355,7 @@ def _dws(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
     sql = DWS_SQL.substitute(
         config=PARTITION_CONFIG,
         period=period,
+        window=table_window(period, widest),
         columns=select_list([*select, (TODAY, "dt")], align=False),
         upstream=upstream[0],
         group_by=", ".join(grain),

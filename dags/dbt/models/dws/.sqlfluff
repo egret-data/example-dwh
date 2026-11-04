@@ -1,0 +1,3 @@
+# DWS aggregate expressions (sum(...) filter (...)) are too wide to align their aliases (spec §7).
+[sqlfluff:layout:type:alias_expression]
+spacing_before = single

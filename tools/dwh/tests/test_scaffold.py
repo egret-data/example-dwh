@@ -1,3 +1,5 @@
+import re
+
 import pytest
 import yaml
 
@@ -169,13 +171,16 @@ def test_scaffolded_dws_passes_every_lint_family(wh, lint):
     )
 
     sql = files["models/dws/trade/dws_trade_customer_1d.sql"]
-    assert f"sum(order_amt) filter (where dt = {TODAY}) as order_amt_sum_1d" in sql
-    assert f"count(*) filter (where dt = {TODAY}) as order_cnt_1d" in sql
+    assert re.search(r"sum\(order_amt\)\s+as order_amt_sum_1d", sql)
+    assert re.search(r"count\(\*\)\s+as order_cnt_1d", sql)
+    assert "filter" not in sql
+    assert f"where dt = {TODAY}\n" in sql
+    assert "group by customer_key\n" in sql
     add_to_project(builder, files, deps=[ids["dwd_order"]])
     assert lint(builder) == []
 
 
-def test_nd_metric_filters_by_modifier_and_window(wh):
+def test_nd_metric_filters_by_modifier_and_the_window_goes_in_where(wh):
     files = scaffold(
         "dws_trade_customer_nd",
         wh,
@@ -185,8 +190,105 @@ def test_nd_metric_filters_by_modifier_and_window(wh):
         upstream=["dwd_trade_order_di"],
     )
 
-    expected = f"sum(order_amt) filter (where channel = 'app' and dt > {TODAY} - interval '30' day)"
-    assert f"{expected} as app_order_amt_sum_30d" in files["models/dws/trade/dws_trade_customer_nd.sql"]
+    sql = files["models/dws/trade/dws_trade_customer_nd.sql"]
+    assert re.search(
+        r"sum\(order_amt\) filter \(\s*where channel = 'app'\s*\)\s+as app_order_amt_sum_30d", sql
+    )
+    assert f"where dt > {TODAY} - interval '30' day\n" in sql
+
+
+@pytest.mark.parametrize(
+    ("name", "metrics", "where"),
+    [
+        ("dws_trade_customer_1w", ["order_amt_sum_1w"], f"dt > {TODAY} - interval '7' day"),
+        ("dws_trade_customer_td", ["order_amt_sum_td"], f"dt <= {TODAY}"),
+    ],
+)
+def test_other_periods_put_their_window_in_where(make_warehouse, name, metrics, where):
+    def add_metric(files):
+        files["metrics"]["derived"].append(
+            {
+                "name": metrics[0],
+                "atomic": "order_amt",
+                "period": name.rsplit("_", 1)[1],
+                "grain": ["customer"],
+                "description": "Order amount.",
+            }
+        )
+
+    warehouse = load_warehouse(make_warehouse(mutate=add_metric))
+    files = scaffold(name, warehouse, project_dir="", grain=["customer_key"], metrics=metrics, upstream=["x"])
+    sql = files[f"models/dws/trade/{name}.sql"]
+    assert f"where {where}\n" in sql
+    assert "filter" not in sql
+
+
+def test_dwd_hashes_the_role_column_or_the_natural_key(wh):
+    order = scaffold("dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"])
+    sql = order["models/dwd/trade/dwd_trade_order_di.sql"]
+    assert "generate_surrogate_key(['order_date']) }}" in sql
+    assert "generate_surrogate_key(['customer_id']) }}" in sql
+    assert (
+        "-- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. order_date)"
+        in sql
+    )
+    shipment = scaffold("dwd_trade_shipment_di", wh, project_dir="", grain=["shipment_id"], upstream=["x"])
+    assert (
+        "generate_surrogate_key(['ship_date']) }}" in shipment["models/dwd/trade/dwd_trade_shipment_di.sql"]
+    )
+
+
+def test_scd4_without_a_historical_attribute_is_refused(make_warehouse):
+    def make_current(files):
+        files["dimensions"]["dimensions"][1]["attributes"][0]["history"] = "current"
+
+    warehouse = load_warehouse(make_warehouse(mutate=make_current))
+    with pytest.raises(ScaffoldError, match="at least one historical attribute"):
+        scaffold("dim_pub_customer", warehouse, project_dir="", upstream=["x"])
+
+
+@pytest.mark.parametrize(
+    ("name", "kwargs"),
+    [
+        ("ods_shop_orders_di", {"grain": ["order_id"]}),
+        ("dim_pub_customer", {"upstream": ["x"]}),
+        ("dwd_trade_order_di", {"grain": ["order_id"], "upstream": ["x"]}),
+        (
+            "dws_trade_customer_1d",
+            {"grain": ["customer_key"], "metrics": ["order_cnt_1d"], "upstream": ["x"]},
+        ),
+        (
+            "ads_bi_customer_daily",
+            {"grain": ["customer_key"], "metrics": ["order_cnt_1d"], "upstream": ["x"]},
+        ),
+    ],
+)
+def test_descriptions_are_empty_so_that_d01_d02_fail_until_filled(wh, name, kwargs):
+    files = scaffold(name, wh, project_dir="", **kwargs)
+    for path, text in files.items():
+        if path.endswith(".yml"):
+            body = yaml.safe_load(text)
+            entry = (body.get("models") or body["snapshots"])[0]
+            assert entry["description"] == ""
+            assert all(c["description"] == "" for c in entry.get("columns", []))
+
+
+def test_no_generated_line_is_longer_than_110_rendered_characters(wh):
+    files = scaffold(
+        "dws_trade_customer_nd",
+        wh,
+        project_dir="",
+        grain=["customer_key"],
+        metrics=["app_order_amt_sum_30d"],
+        upstream=["dwd_trade_order_di"],
+    )
+    files |= scaffold("dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"])
+    for path, text in files.items():
+        if path.endswith(".sql"):
+            for line in text.replace("{{ get_dt() }}", "2026-11-02").splitlines():
+                assert len(line) <= 110, line
+                assert "noqa" not in line
+                assert "sqlfluff:" not in line
 
 
 def test_scaffolded_ads_writes_calculated_metrics_as_formulas_and_lints_clean(wh, lint):
