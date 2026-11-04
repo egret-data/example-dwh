@@ -1,0 +1,19 @@
+# SQL style for dbt models (spec §7, docs/standards/10-trino-sql-style.md). Run: make sql-lint
+[sqlfluff]
+dialect = trino
+templater = jinja
+max_line_length = 110
+# AM04: no select * (ambiguous column count). ODS is exempt in dags/dbt/models/ods/.sqlfluff.
+rules = core,AM04
+
+[sqlfluff:templater:jinja]
+apply_dbt_builtins = True
+# dbt's `modules` does not exist here: dev/sqlfluff/macros overrides get_dt() with a fixed date.
+load_macros_from_path = dags/dbt/macros,dev/sqlfluff/macros
+# Python stand-ins for package macros (dbt_utils), so models that call them lint.
+library_path = dev/sqlfluff/libs
+
+[sqlfluff:layout:type:alias_expression]
+spacing_before = align
+align_within = select_clause
+align_scope = bracketed

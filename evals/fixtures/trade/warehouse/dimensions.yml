@@ -1,0 +1,32 @@
+# Eval fixture: a small trade domain (orders, shipments) copied from tools/dwh/tests/fixtures.
+dimensions:
+- name: date
+  scope: pub
+  description: Calendar day.
+  natural_key:
+  - cal_date
+  history: scd1
+  attributes:
+  - name: year
+    description: Year.
+    history: current
+- name: customer
+  scope: pub
+  description: A buyer.
+  natural_key:
+  - customer_id
+  history: scd4
+  attributes:
+  - name: city
+    description: City.
+    history: historical
+- name: shop
+  scope: trade
+  description: A shop.
+  natural_key:
+  - shop_id
+  history: scd1
+  attributes:
+  - name: shop_name
+    description: Shop name.
+    history: current

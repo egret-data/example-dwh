@@ -2,7 +2,7 @@ COMPOSE := docker compose -f dev/compose.yml
 DWH := uv run --locked --project tools/dwh dwh
 RUN := $(COMPOSE) run --rm airflow
 
-.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog
+.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards sql-lint sql-fix sync-agents sync-agents-check pre-commit-install pre-commit eval
 
 dev-up:
 	$(COMPOSE) up -d trino
@@ -17,6 +17,12 @@ smoke:
 lint:
 	uvx ruff@0.17.3 check .
 	uvx ruff@0.17.3 format --check .
+
+sql-lint:
+	uvx --python 3.12 sqlfluff==4.5.0 lint dags/dbt/models
+
+sql-fix:
+	uvx --python 3.12 sqlfluff==4.5.0 fix dags/dbt/models
 
 fmt:
 	uvx ruff@0.17.3 check --fix .
@@ -50,6 +56,15 @@ lock:
 dwh-test:
 	uv run --locked --project tools/dwh pytest -p no:cacheprovider tools/dwh/tests -v
 
+check-standards:
+	$(DWH) check-standards --standards docs/standards --require-all
+
+sync-agents:
+	$(DWH) sync-agents --repo .
+
+sync-agents-check:
+	$(DWH) sync-agents --repo . --check
+
 validate:
 	$(DWH) validate --warehouse warehouse
 
@@ -68,3 +83,12 @@ dwh-lint: manifest
 catalog: manifest
 	$(HOST_DBT_ENV) $(HOST_DBT) docs generate --project-dir dags/dbt --no-compile --empty-catalog --static
 	$(DWH) catalog --warehouse warehouse --out site --dbt-docs .dbt/target/static_index.html
+
+pre-commit-install:
+	uvx pre-commit@4.7.0 install
+
+pre-commit:
+	uvx pre-commit@4.7.0 run --all-files
+
+eval:
+	./evals/run.sh $(SCENARIO) $(if $(REF),--ref $(REF))

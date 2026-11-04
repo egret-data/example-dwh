@@ -3,6 +3,8 @@
   source_ts() turns a naive source timestamp into timestamp(6) with time zone, read in the source's
   timezone. in_business_day() keeps rows whose instant falls in [dt 00:00, dt+1 00:00)
   Asia/Ho_Chi_Minh, comparing the raw source column so the filter is pushed down to the source. Asia/Ho_Chi_Minh has no DST, so "+ interval '1' day" is exactly 24 hours.
+  in_business_day_tz() is the same window for a column that is already timestamp(6) with time zone, for
+  example an ODS event timestamp read by an event DWD (STD-05-08).
 #}
 {% macro business_tz() -%}
   {{- return('Asia/Ho_Chi_Minh') -}}
@@ -19,4 +21,10 @@ with_timezone(cast({{ column }} as timestamp(6)), '{{ source_tz }}')
 {%- set raw = "cast(" ~ column ~ " as timestamp(6))" -%}
 {{ raw }} >= cast({{ day_start }} at time zone '{{ source_tz }}' as timestamp(6))
     and {{ raw }} < cast(({{ day_start }} + interval '1' day) at time zone '{{ source_tz }}' as timestamp(6))
+{%- endmacro %}
+
+{% macro in_business_day_tz(column) -%}
+{%- set day_start = "with_timezone(timestamp '" ~ get_dt() ~ " 00:00:00', '" ~ business_tz() ~ "')" -%}
+{{ column }} >= {{ day_start }}
+    and {{ column }} < {{ day_start }} + interval '1' day
 {%- endmacro %}

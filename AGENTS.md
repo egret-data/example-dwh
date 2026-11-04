@@ -1,0 +1,88 @@
+# example-dwh: instructions for AI coding tools and people
+
+This repository holds:
+- an Airflow project, deployed with git-sync;
+- a dbt-trino warehouse on Apache Iceberg, modelled the Kimball / Alibaba OneData way.
+
+These instructions apply to every change to warehouse data, models, tests or DAGs.
+
+## Start here
+
+Before any data change, open `skills/dwh-start/SKILL.md` and follow it. Then follow the skill it sends you to.
+
+- Claude Code loads the skills automatically from `.claude/skills/`.
+- Cursor, Copilot, Codex and Gemini: open the skill file yourself.
+
+## Non-negotiables
+
+1. **Classify the change first** (`dwh-start`). A model-extending change stops for human design approval before any
+   SQL is written.
+2. **Grain first.** Write "one row per …" before choosing columns.
+3. **Reuse before create.** Search `warehouse/*.yml` (or the catalogue) for processes, dimensions and metrics before
+   proposing new ones.
+4. **Layers point down.**
+   - Only ODS reads `source()`.
+   - DIM and DWD read ODS and DIM.
+   - DWS reads DWD, DIM and DWS.
+   - ADS reads DWS and DIM.
+5. **`dt` is the Asia/Ho_Chi_Minh business day**, from `get_dt()` in models and `DT_TEMPLATE` in DAGs. Never
+   `{{ ds }}`.
+6. **Evidence before done.** Never say a change works without real command output (`dwh-verify`).
+7. **Generated files are read-only:** `CLAUDE.md`, `GEMINI.md`, `.claude/skills/`, `.cursor/rules/` and
+   `.github/copilot-instructions.md`. Edit `AGENTS.md` or `skills/`, then run `make sync-agents`.
+
+## Skills
+
+| Skill | Use when |
+|-------|----------|
+| `dwh-start` | any data change request, before anything else |
+| `dwh-requirement` | the change is model-extending, or its process, grain, dimensions or metrics are unclear |
+| `dwh-model-design` | updating `warehouse/*.yml` and table specifications, before SQL |
+| `dwh-implement` | writing or changing dbt models, snapshots, tests or DAGs |
+| `dwh-verify` | before saying a change is done, opening a PR or reporting numbers |
+| `dwh-review` | reviewing a data PR, your own or someone else's |
+| `dwh-debug` | a build, task or query fails, or numbers do not match |
+| `dwh-backfill` | past `dt` partitions must be rebuilt |
+
+## Before doing X, read Y
+
+| Doing | Read |
+|-------|------|
+| anything | `docs/standards/00-principles.md` |
+| choosing where a model goes or what it may read | `docs/standards/01-layers.md` |
+| naming a table, column or metric | `docs/standards/02-naming.md` |
+| adding a domain, process or bus-matrix row | `docs/standards/03-domains-bus-matrix.md` |
+| a dimension, its keys or its history | `docs/standards/04-dimensions.md` |
+| a fact table | `docs/standards/05-facts.md` |
+| a metric or modifier | `docs/standards/06-metrics.md` |
+| a DWS or ADS table | `docs/standards/07-dws-ads.md` |
+| partitions, `dt`, sources, late data | `docs/standards/08-iceberg-incremental.md` |
+| dbt YAML, tests, contracts | `docs/standards/09-dbt-conventions.md` |
+| writing SQL | `docs/standards/10-trino-sql-style.md` |
+| a DAG | `docs/standards/11-airflow.md` |
+| tests, reconciliation, performance | `docs/standards/12-data-quality.md` |
+
+## Commands
+
+| Command | Does |
+|---------|------|
+| `make validate` | check `warehouse/*.yml` (DWH-Y) |
+| `make dwh-lint` | build the dbt manifest on the host and lint the project (DWH-Y, N, L, M, B, T, D, S) |
+| `make sql-lint` | sqlfluff on dbt models |
+| `make check-standards` | check the rulebook format and its lint-code citations (DWH-R) |
+| `uv run --project tools/dwh dwh scaffold <model> --from ... --grain ... [--event-at ...] [--metric ...]` | print a new model's files; add `--write` to create them |
+| `make dev-up`, `make test-dags`, `make test-integration`, `make e2e` | local stack and its tests |
+| `make catalog` | render the design catalogue into `site/` |
+| `make sync-agents` | regenerate the per-tool AI files after editing `AGENTS.md` or `skills/` |
+
+## Repository map
+
+| Path | Holds |
+|------|-------|
+| `dags/` | DAGs (`sources/`, `transform/`), shared code `_common/`, dbt project `dbt/` |
+| `warehouse/` | the design: domains, processes, dimensions, bus matrix, metrics, modifiers, periods, glossary |
+| `docs/standards/` | the rulebook |
+| `docs/designs/` | design records for model-extending changes |
+| `skills/` | the process skills, the source of the generated tool files |
+| `tools/dwh/` | the `dwh` CLI: validate, lint, scaffold, design-gate, catalog, sync-agents |
+| `evals/` | headless scenarios for the skills |

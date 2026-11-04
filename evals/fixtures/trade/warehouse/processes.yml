@@ -1,0 +1,12 @@
+# Eval fixture: a small trade domain (orders, shipments) copied from tools/dwh/tests/fixtures.
+processes:
+- name: order
+  domain: trade
+  description: A buyer places an order.
+  fact_type: transaction
+  grain: One row per order.
+- name: shipment
+  domain: trade
+  description: An order moves from placed to delivered.
+  fact_type: accumulating_snapshot
+  grain: One row per order, updated at each milestone.

@@ -59,9 +59,12 @@ def test_l04_accumulating_snapshot_reads_transaction_facts_not_ods(lint):
     assert lint(builder, prefix="DWH-L") == ["DWH-L04"]
 
 
-def test_l04_snapshot_reads_ods_only(lint):
+def test_l04_snapshot_reads_ods_or_the_current_dim(lint):
     builder, ids = good_project()
     builder.snapshot("dim_pub_shop_hist", "snapshots/dim_pub_shop_hist.yml", deps=[ids["dim_customer"]])
+    assert lint(builder, prefix="DWH-L") == []
+
+    builder.snapshot("dim_pub_city_hist", "snapshots/dim_pub_city_hist.yml", deps=[ids["dwd_order"]])
     assert lint(builder, prefix="DWH-L") == ["DWH-L04"]
 
 

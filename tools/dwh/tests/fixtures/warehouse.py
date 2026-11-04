@@ -12,7 +12,7 @@ SCHEMAS = REPO / "warehouse" / "schemas"
 WORDS = (
     "ods dim dwd dws ads pub hist di df dt id key is at amt cnt dcnt sum min max avg "
     "date cal year month weekday name inferred trade order shipment ship customer city shop "
-    "app channel buyer bi daily status"
+    "app channel buyer bi daily status created"
 ).split()
 
 MINIMAL: dict = {
@@ -131,7 +131,7 @@ MINIMAL: dict = {
         "calculated": [
             {
                 "name": "avg_order_amt_1d",
-                "formula": "order_amt_sum_1d / order_cnt_1d",
+                "formula": "order_amt_sum_1d / nullif(order_cnt_1d, 0)",
                 "inputs": ["order_amt_sum_1d", "order_cnt_1d"],
                 "description": "Average order amount per customer per day.",
             }

@@ -123,3 +123,47 @@ def test_cli_lint_prefixes_paths_with_project_dir(make_warehouse, write_manifest
 
     assert rc == 1
     assert "dags/dbt/models/dwd/trade/dwd_trade_order_di.sql: DWH-D01" in capsys.readouterr().out
+
+
+def test_cli_lint_changed_keeps_findings_in_changed_folders(make_warehouse, write_manifest, capsys):
+    builder, ids = good_project()
+    builder.node(ids["dwd_order"])["description"] = ""
+    builder.node(ids["ads_customer"])["description"] = ""
+
+    rc = main(
+        [
+            "lint",
+            "--warehouse",
+            str(make_warehouse()),
+            "--manifest",
+            str(write_manifest(builder)),
+            "--project-dir",
+            "dags/dbt",
+            "--changed",
+            "dags/dbt/models/dwd/trade/_trade__models.yml",
+        ]
+    )
+
+    out = capsys.readouterr().out
+    assert rc == 1
+    assert "dwd_trade_order_di: model has no description" in out
+    assert "ads_bi_customer_daily" not in out
+
+
+def test_cli_lint_changed_without_files_reports_nothing(make_warehouse, write_manifest, capsys):
+    builder, ids = good_project()
+    builder.node(ids["dwd_order"])["description"] = ""
+
+    rc = main(
+        [
+            "lint",
+            "--warehouse",
+            str(make_warehouse()),
+            "--manifest",
+            str(write_manifest(builder)),
+            "--changed",
+        ]
+    )
+
+    assert rc == 0
+    assert capsys.readouterr().out.strip() == "0 finding(s)"
