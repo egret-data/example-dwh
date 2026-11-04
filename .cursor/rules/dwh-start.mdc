@@ -16,7 +16,8 @@ Every data change starts here. Classify it, say the class, then follow its path.
    - `warehouse/metrics.yml`, `modifiers.yml`, `glossary.yml`;
    - or the catalogue.
 3. Classify with the table. If two classes fit, take the higher row. If unsure, it is model-extending.
-4. Say: "Class: <class>. Path: <skills>." Then follow the path.
+4. Say: "Class: <class>. Path: <skills>." as the first line of your answer, naming the skills of the path in order,
+   even when the request is blocked or you ask a question. Then follow the path.
 
 | Class | Signals | Path |
 |-------|---------|------|
