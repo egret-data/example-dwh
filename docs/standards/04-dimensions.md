@@ -81,9 +81,10 @@ Checked by: DWH-T04
 
 ### STD-04-03 History from a snapshot of the current DIM (MUST)
 
-`dim_*_hist` is a dbt snapshot of `dim_*`. Set `unique_key` to the durable key, `strategy: check` with the
-historical attributes as `check_cols`, and rename the snapshot columns to `valid_from` and `valid_to`. `is_current` is
-derived as `valid_to is null`, never stored. The lint checks cover the name and the dependency: only a snapshot may
+`dim_*_hist` is a dbt snapshot of `dim_*`. Set `unique_key` to the durable key, `strategy: timestamp` on the
+dimension's `updated_at` (the source's change time, `timestamp(6) with time zone`, carried in `dim_*`), and rename the
+snapshot columns to `valid_from` and `valid_to`. `valid_from` is then the time the source changed. A `check` strategy
+would stamp the load time and break point-in-time joins on backfills. `is_current` is derived as `valid_to is null`, never stored. The lint checks cover the name and the dependency: only a snapshot may
 be named `dim_*_hist` (DWH-N04), and a snapshot reads a `dim_*` or ODS model (DWH-L04). The key, strategy and column
 names are checked in review.
 
@@ -96,8 +97,8 @@ snapshots:
     description: Every version of a customer; valid_to is null for the current one.
     config:
       unique_key: [customer_key]
-      strategy: check
-      check_cols: [city]
+      strategy: timestamp
+      updated_at: updated_at
       snapshot_meta_column_names:
         dbt_valid_from: valid_from
         dbt_valid_to: valid_to
@@ -112,8 +113,8 @@ snapshots:
     description: Every version of a customer; valid_to is null for the current one.
     config:
       unique_key: [customer_id]   # the natural key, not the durable key
-      strategy: check
-      check_cols: [city]
+      strategy: timestamp
+      updated_at: updated_at
       snapshot_meta_column_names:
         dbt_valid_from: valid_from
         dbt_valid_to: valid_to
@@ -196,8 +197,8 @@ Checked by: DWH-Y01
 
 Two keys are reserved: `'-1'` means unknown (the natural key is null or not found) and `'-2'` means not applicable. Both are
 varchar, like every hash key, and each DIM contains one row for each. The DWD maps a null natural key to `'-1'`
-itself, because the hash of a null is a real, wrong key. The special rows have a null natural key and null
-attributes; `dwh scaffold` unions them in from a `special_members` CTE, and the `not_null` test on the natural key
+itself, because the hash of a null is a real, wrong key. The special rows have a null natural key; their text attributes are `Unknown` (`'-1'`)
+and `Not applicable` (`'-2'`), and numbers and dates are null. `dwh scaffold` unions them in from a `special_members` CTE, and the `not_null` test on the natural key
 skips the keys `'-1'` and `'-2'`. A natural key that is not yet in the DIM becomes an inferred member
 (STD-04-07) rather than `'-1'` once inferred members are in place. No lint code checks this yet.
 
@@ -207,14 +208,16 @@ Correct:
 -- in dim_pub_customer, unioned after the real rows
 special_members as (
     select
-        '-1'                  as customer_key,
-        cast(null as bigint)  as customer_id,
-        cast(null as varchar) as city
+        '-1'                                 as customer_key,
+        cast(null as bigint)                 as customer_id,
+        'Unknown'                            as city,
+        timestamp '1900-01-01 00:00:00 UTC'  as updated_at
     union all
     select
-        '-2'                  as customer_key,
-        cast(null as bigint)  as customer_id,
-        cast(null as varchar) as city
+        '-2'                                 as customer_key,
+        cast(null as bigint)                 as customer_id,
+        'Not applicable'                     as city,
+        timestamp '1900-01-01 00:00:00 UTC'  as updated_at
 )
 
 -- in the DWD

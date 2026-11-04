@@ -209,7 +209,9 @@ A fact can reach the warehouse after its `dt` was loaded. Late facts are handled
 rebuilds exactly one dt (STD-08-04). An event DWD re-run for dt D reads every ODS partition from D onward
 (STD-05-08), so rows that reached ODS after D are picked up. When a source's watermark can lag, for example a source
 that commits rows with an older `updated_at`, write the lag in the source's description so the operator knows which
-dts to re-run. The inferred-member case for dimensions is STD-04-07.
+dts to re-run. A source whose watermark can lag is loaded `df` (or
+`full_compare`), because a `di` window cannot see rows that arrive with an old `updated_at`. The inferred-member case
+for dimensions is STD-04-07.
 
 Correct:
 

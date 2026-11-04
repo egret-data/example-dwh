@@ -151,21 +151,34 @@ A `historical` attribute is resolved in DWD by joining `dim_*_hist` on the durab
 `event_at >= valid_from and (event_at < valid_to or valid_to is null)`, and the value is stored on the fact. A
 `current` attribute need not be copied. When it is (STD-05-07), the copy is frozen at load time and goes stale when the
 dimension changes; query `dim_*` for the up-to-date value. Compare `event_at` with the snapshot columns in the same
-time zone. An event earlier than the first snapshot's `valid_from` finds no history row: coalesce the attribute to
-the unknown value, or seed the history before backfilling. No lint code checks this yet.
+time zone. In the history CTE, each key's earliest version gets `valid_from = timestamp '1900-01-01 00:00:00 UTC'`, so an
+event earlier than the first snapshot takes the first known version. A key with no history row at all gets
+`'Unknown'`. No lint code checks this yet.
 
 Correct:
 
 ```sql
 -- versions: the event-day ODS rows of STD-05-08
+with history as (
+    select
+        customer_key,
+        city,
+        case when valid_from = min(valid_from) over (partition by customer_key)
+             then timestamp '1900-01-01 00:00:00 UTC'
+             else valid_from
+        end as valid_from,
+        valid_to
+    from {{ ref('dim_pub_customer_hist') }}
+)
+
 select
     o.order_id,
-    c.city as customer_city
+    coalesce(h.city, 'Unknown') as customer_city
 from versions as o
-left join {{ ref('dim_pub_customer_hist') }} as c
-    on c.customer_key = {{ dbt_utils.generate_surrogate_key(['o.customer_id']) }}
-    and o.created_at >= c.valid_from
-    and (o.created_at < c.valid_to or c.valid_to is null)
+left join history as h
+    on h.customer_key = {{ dbt_utils.generate_surrogate_key(['o.customer_id']) }}
+    and o.created_at >= h.valid_from
+    and (o.created_at < h.valid_to or h.valid_to is null)
 where o.version_rank = 1
 ```
 

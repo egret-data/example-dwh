@@ -100,8 +100,9 @@ def test_scd4_dimension_comes_with_its_hist_snapshot(wh):
     snapshot = yaml.safe_load(files["snapshots/dim_pub_customer_hist.yml"])["snapshots"][0]
     assert snapshot["relation"] == "ref('dim_pub_customer')"
     assert snapshot["config"]["unique_key"] == ["customer_key"]
-    assert snapshot["config"]["strategy"] == "check"
-    assert snapshot["config"]["check_cols"] == ["city"]
+    assert snapshot["config"]["strategy"] == "timestamp"
+    assert snapshot["config"]["updated_at"] == "updated_at"
+    assert "check_cols" not in snapshot["config"]
     assert snapshot["config"]["snapshot_meta_column_names"] == {
         "dbt_valid_from": "valid_from",
         "dbt_valid_to": "valid_to",
@@ -111,6 +112,8 @@ def test_scd4_dimension_comes_with_its_hist_snapshot(wh):
 def test_scd1_dimension_has_no_snapshot(wh):
     files = scaffold("dim_trade_shop", wh, project_dir="", upstream=["ods_shop_customers_df"])
     assert set(files) == {"models/dim/trade/dim_trade_shop.sql", "models/dim/trade/dim_trade_shop.yml"}
+    assert "updated_at" not in files["models/dim/trade/dim_trade_shop.sql"]
+    assert "updated_at" not in columns(model_of(files["models/dim/trade/dim_trade_shop.yml"]))
 
 
 @pytest.mark.parametrize(
@@ -241,7 +244,7 @@ def test_dwd_hashes_the_role_column_or_the_natural_key(wh):
         "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="created_at"
     )
     sql = order["models/dwd/trade/dwd_trade_order_di.sql"]
-    assert "generate_surrogate_key(['order_date']) }}" in sql
+    assert "generate_surrogate_key(['order_date'])" not in sql
     assert "generate_surrogate_key(['customer_id']) }}" in sql
     assert (
         "-- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. order_date)"
@@ -254,7 +257,7 @@ def test_dwd_maps_a_null_natural_key_to_the_unknown_member(wh):
         "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="created_at"
     )
     sql = files["models/dwd/trade/dwd_trade_order_di.sql"]
-    for key, natural in [("customer_key", "customer_id"), ("order_date_key", "order_date")]:
+    for key, natural in [("customer_key", "customer_id")]:
         case = (
             f"    case\n"
             f"        when {natural} is null then '-1'\n"
@@ -264,8 +267,42 @@ def test_dwd_maps_a_null_natural_key_to_the_unknown_member(wh):
         assert re.search(rf"{re.escape(case)}\s+as {key},", sql), key
     # The versions CTE lists each key's source column, the event column and dt, nothing else.
     versions = sql.split("with versions as (", 1)[1].split("from {{ ref('x') }}", 1)[0]
-    for name in ("order_id", "order_date", "customer_id", "shop_id", "created_at", "dt"):
+    for name in ("order_id", "customer_id", "shop_id", "created_at", "dt"):
         assert re.search(rf"^\s+{name},$", versions, re.MULTILINE), name
+
+
+def test_special_members_carry_text_labels(wh):
+    sql = scaffold("dim_pub_customer", wh, project_dir="", upstream=["ods_shop_customers_df"])[
+        "models/dim/pub/dim_pub_customer.sql"
+    ]
+    assert "'Unknown'" in sql
+    assert "'Not applicable'" in sql
+    assert "timestamp '1900-01-01 00:00:00 UTC'" in sql
+
+
+def test_scd4_dimension_carries_updated_at_and_snapshots_by_timestamp(wh):
+    files = scaffold("dim_pub_customer", wh, project_dir="", upstream=["ods_shop_customers_df"])
+
+    model = model_of(files["models/dim/pub/dim_pub_customer.yml"])
+    assert columns(model)["updated_at"]["data_type"] == "timestamp(6) with time zone"
+    snapshot = yaml.safe_load(files["snapshots/dim_pub_customer_hist.yml"])["snapshots"][0]
+    assert snapshot["config"]["strategy"] == "timestamp"
+    assert snapshot["config"]["updated_at"] == "updated_at"
+    assert "check_cols" not in snapshot["config"]
+
+
+def test_event_dwd_derives_its_single_date_role_from_the_event_column(wh):
+    sql = scaffold(
+        "dwd_trade_order_di",
+        wh,
+        project_dir="",
+        grain=["order_id"],
+        upstream=["ods_shop_orders_di"],
+        event_at="created_at",
+    )["models/dwd/trade/dwd_trade_order_di.sql"]
+
+    assert "cast(created_at at time zone 'Asia/Ho_Chi_Minh' as date)" in sql
+    assert "['order_date']" not in sql
 
 
 def test_accumulating_snapshot_dwd_is_written_by_hand(wh):
@@ -288,7 +325,8 @@ def test_dimension_unions_the_special_members_with_a_null_natural_key(wh):
     assert re.search(r"'-1'\s+as customer_key", sql)
     assert re.search(r"'-2'\s+as customer_key", sql)
     assert re.search(r"cast\(null as bigint\)\s+as customer_id", sql)
-    assert re.search(r"cast\(null as varchar\)\s+as city", sql)
+    assert re.search(r"'Unknown'\s+as city", sql)
+    assert re.search(r"'Not applicable'\s+as city", sql)
     assert "union all" in sql
     assert "select *" not in sql
     model = model_of(files["models/dim/pub/dim_pub_customer.yml"])
