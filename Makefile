@@ -2,7 +2,7 @@ COMPOSE := docker compose -f dev/compose.yml
 DWH := uv run --locked --project tools/dwh dwh
 RUN := $(COMPOSE) run --rm airflow
 
-.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards sql-lint
+.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards sql-lint sync-agents sync-agents-check
 
 dev-up:
 	$(COMPOSE) up -d trino
@@ -55,6 +55,12 @@ dwh-test:
 
 check-standards:
 	$(DWH) check-standards --standards docs/standards --require-all
+
+sync-agents:
+	$(DWH) sync-agents --repo .
+
+sync-agents-check:
+	$(DWH) sync-agents --repo . --check
 
 validate:
 	$(DWH) validate --warehouse warehouse

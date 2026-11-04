@@ -12,6 +12,7 @@ from dwh.findings import Finding
 from dwh.lint import Context, run_lint
 from dwh.manifest import load_manifest
 from dwh.standards import check_standards
+from dwh.sync_agents import SkillError, sync
 from dwh.validate import validate
 from dwh.warehouse import load_warehouse
 
@@ -86,6 +87,25 @@ def cmd_check_standards(args: argparse.Namespace) -> int:
     return report(check_standards(args.standards, require_all=args.require_all))
 
 
+def cmd_sync_agents(args: argparse.Namespace) -> int:
+    try:
+        changed = sync(args.repo, check=args.check)
+    except SkillError as exc:
+        print(f"dwh: {exc}", file=sys.stderr)
+        return 2
+    if args.check:
+        for relative in changed:
+            print(f"out of date: {relative}")
+        if changed:
+            print("run `make sync-agents` and commit the result")
+            return 1
+        print("agent files are up to date")
+        return 0
+    for relative in changed:
+        print(f"wrote {relative}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dwh", description="example-dwh design metadata tools")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -124,6 +144,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-all", action="store_true", help="also require every file and every code citation"
     )
     p.set_defaults(func=cmd_check_standards)
+
+    p = sub.add_parser("sync-agents", help="generate per-tool AI files from AGENTS.md and skills/")
+    p.add_argument("--repo", type=Path, default=Path("."))
+    p.add_argument("--check", action="store_true", help="only report drift (exit 1)")
+    p.set_defaults(func=cmd_sync_agents)
 
     return parser
 
