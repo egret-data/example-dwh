@@ -1,0 +1,30 @@
+version: 2
+
+models:
+  - name: ods_shop_orders_di
+    description: "Daily increment of shop.orders: rows whose updated_at falls on dt. Grain: one row per order per dt."
+    columns:
+      - name: order_id
+        description: Order id from the source.
+        data_tests: [not_null]
+      - name: dt
+        description: Partition date (the day the row changed).
+        data_tests: [not_null]
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [order_id, dt]
+
+  - name: ods_shop_customers_df
+    description: "Daily full copy of shop.customers. Grain: one row per customer per dt."
+    columns:
+      - name: customer_id
+        description: Customer id from the source.
+        data_tests: [not_null]
+      - name: dt
+        description: Partition date (snapshot day).
+        data_tests: [not_null]
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [customer_id, dt]

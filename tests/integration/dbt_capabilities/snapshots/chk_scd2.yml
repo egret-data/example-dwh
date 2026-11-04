@@ -1,0 +1,7 @@
+snapshots:
+  - name: chk_scd2
+    relation: ref('chk_scd2_src')
+    config:
+      unique_key: id
+      strategy: check
+      check_cols: ["v"]

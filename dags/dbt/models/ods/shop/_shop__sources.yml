@@ -1,0 +1,12 @@
+version: 2
+
+sources:
+  - name: shop
+    description: Shop OLTP database (Trino catalog `shop`, Postgres connector).
+    database: shop
+    schema: public
+    tables:
+      - name: orders
+        description: One row per order; updated in place.
+      - name: customers
+        description: One row per customer; updated in place.

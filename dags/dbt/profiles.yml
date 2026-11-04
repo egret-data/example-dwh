@@ -1,0 +1,17 @@
+# Environment variables only. No secrets in this file.
+example_dwh:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev: &trino
+      type: trino
+      method: "{{ env_var('TRINO_AUTH_METHOD', 'none') }}"
+      user: "{{ env_var('TRINO_USER', 'dbt') }}"
+      password: "{{ env_var('TRINO_PASSWORD', '') }}"
+      host: "{{ env_var('TRINO_HOST', 'localhost') }}"
+      port: "{{ env_var('TRINO_PORT', '8080') | as_number }}"
+      http_scheme: "{{ env_var('TRINO_HTTP_SCHEME', 'http') }}"
+      database: "{{ env_var('TRINO_CATALOG', 'iceberg') }}"
+      schema: "{{ env_var('DBT_SCHEMA', 'dev') }}"
+      threads: 4
+    ci: *trino
+    prod: *trino

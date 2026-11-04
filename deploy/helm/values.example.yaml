@@ -1,0 +1,45 @@
+# Example values for the official Airflow Helm chart 1.22.0 (https://airflow.apache.org).
+# Replace registry, repo URL and secret names with your own.
+airflowVersion: "3.3.2"
+images:
+  airflow:
+    repository: registry.example.com/example-dwh/airflow   # built from Dockerfile, target `prod`
+    tag: "0.1.0"
+
+dags:
+  persistence:
+    enabled: false
+  gitSync:
+    enabled: true
+    repo: https://github.com/example-org/example-dwh.git
+    branch: main
+    rev: HEAD
+    depth: 1
+    subPath: "dags"        # dags_folder = /opt/airflow/dags/repo/dags
+    period: 60s
+
+config:
+  core:
+    load_examples: "False"
+
+env:
+  - name: DBT_TARGET
+    value: prod
+  # Schema for nodes without a custom schema; layer folders land in ods, dim, ... under prod.
+  - name: DBT_SCHEMA
+    value: dwh
+  - name: TRINO_HOST
+    value: trino.trino.svc.cluster.local
+  - name: TRINO_PORT
+    value: "8443"
+  - name: TRINO_HTTP_SCHEME
+    value: https
+  - name: TRINO_CATALOG
+    value: iceberg
+  - name: TRINO_AUTH_METHOD
+    value: ldap
+
+# TRINO_USER and TRINO_PASSWORD come from a Kubernetes Secret.
+extraEnvFrom: |
+  - secretRef:
+      name: example-dwh-trino

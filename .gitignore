@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+.pytest_cache/
+.ruff_cache/
+dags/dbt/target/
+dags/dbt/dbt_packages/
+dags/dbt/logs/
+logs/
+
+# dbt local artifacts
+.user.yml

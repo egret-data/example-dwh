@@ -1,0 +1,47 @@
+name: example_dwh
+version: "0.1.0"
+config-version: 2
+profile: example_dwh
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+# Packages are baked into the image (git-sync volume is read-only).
+packages-install-path: "{{ env_var('DBT_PACKAGES_INSTALL_PATH', 'dbt_packages') }}"
+
+models:
+  example_dwh:
+    +on_schema_change: fail
+    ods:
+      +schema: ods
+      +materialized: incremental
+      +tags: ["layer:ods"]
+      shop:
+        +tags: ["ods_shop"]
+    dim:
+      +schema: dim
+      +materialized: table
+      +tags: ["layer:dim"]
+    dwd:
+      +schema: dwd
+      +materialized: incremental
+      +tags: ["layer:dwd"]
+    dws:
+      +schema: dws
+      +materialized: incremental
+      +tags: ["layer:dws"]
+    ads:
+      +schema: ads
+      +materialized: table
+      +tags: ["layer:ads"]
+
+# SCD4 `_hist` tables come from snapshots and belong to the DIM layer.
+snapshots:
+  example_dwh:
+    +schema: dim
+
+seeds:
+  example_dwh:
+    +schema: ods

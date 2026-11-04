@@ -1,0 +1,6 @@
+name: dbt_capabilities
+version: "0.1.0"
+config-version: 2
+profile: example_dwh
+model-paths: ["models"]
+snapshot-paths: ["snapshots"]
