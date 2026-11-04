@@ -14,10 +14,27 @@ MARKER = (
 FRONTMATTER = re.compile(r"\A---\n(?P<yaml>.*?)\n---\n(?P<body>.*)\Z", re.S)
 SKILL_NAME = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 GENERATED_DIRS = (".claude/skills", ".cursor/rules")
+STALE_SUFFIX = " (stale)"
 
 
 class SkillError(ValueError):
     """A skill or AGENTS.md cannot be turned into tool files."""
+
+
+def is_ignored(relative: Path) -> bool:
+    """Hidden files (.DS_Store, ...) and __pycache__ are neither sources nor generated output."""
+    return any(part.startswith(".") or part == "__pycache__" for part in relative.parts)
+
+
+def read_text(path: Path) -> str:
+    try:
+        return path.read_text()
+    except UnicodeDecodeError as exc:
+        raise SkillError(f"{path}: not a UTF-8 text file ({exc.reason})") from exc
+
+
+def walk_files(root: Path) -> list[Path]:
+    return sorted(p for p in root.rglob("*") if p.is_file() and not is_ignored(p.relative_to(root)))
 
 
 @dataclass(frozen=True)
@@ -30,10 +47,15 @@ class Skill:
 
 def load_skill(directory: Path) -> Skill:
     path = directory / "SKILL.md"
-    match = FRONTMATTER.match(path.read_text())
+    match = FRONTMATTER.match(read_text(path))
     if not match:
         raise SkillError(f"{path}: missing YAML frontmatter")
-    meta = yaml.safe_load(match["yaml"]) or {}
+    try:
+        meta = yaml.safe_load(match["yaml"]) or {}
+    except yaml.YAMLError as exc:
+        raise SkillError(f"{path}: frontmatter is not valid YAML: {exc}") from exc
+    if not isinstance(meta, dict):
+        raise SkillError(f"{path}: frontmatter must be a YAML mapping")
     if set(meta) != {"name", "description"}:
         raise SkillError(f"{path}: frontmatter must have only name and description, got {sorted(meta)}")
     if len(match["yaml"]) > 1024:
@@ -47,8 +69,10 @@ def load_skill(directory: Path) -> Skill:
 
 
 def load_skills(skills_dir: Path) -> list[Skill]:
+    if not skills_dir.is_dir():
+        return []
     skills = []
-    for directory in sorted(p for p in skills_dir.iterdir() if p.is_dir()) if skills_dir.is_dir() else []:
+    for directory in sorted(p for p in skills_dir.iterdir() if p.is_dir() and not is_ignored(Path(p.name))):
         if not (directory / "SKILL.md").is_file():
             raise SkillError(f"{directory}: no SKILL.md")
         skills.append(load_skill(directory))
@@ -65,16 +89,16 @@ def render(repo: Path) -> dict[str, str]:
     agents_path = repo / "AGENTS.md"
     if not agents_path.is_file():
         raise SkillError(f"{agents_path}: AGENTS.md is missing")
-    agents = agents_path.read_text()
+    agents = read_text(agents_path)
     skills = load_skills(repo / "skills")
     out: dict[str, str] = {}
     pointer = f"{MARKER.format(source='AGENTS.md')}\n@AGENTS.md\n"
     out["CLAUDE.md"] = pointer
     out["GEMINI.md"] = pointer
     for skill in skills:
-        for path in sorted(p for p in skill.directory.rglob("*") if p.is_file()):
+        for path in walk_files(skill.directory):
             relative = path.relative_to(repo / "skills").as_posix()
-            text = path.read_text()
+            text = read_text(path)
             if path.name == "SKILL.md" and path.parent == skill.directory:
                 text = with_marker_after_frontmatter(text, f"skills/{relative}")
             out[f".claude/skills/{relative}"] = text
@@ -99,11 +123,21 @@ def stale_files(repo: Path, expected: dict[str, str]) -> list[str]:
     for directory in GENERATED_DIRS:
         root = repo / directory
         if root.is_dir():
-            for path in sorted(p for p in root.rglob("*") if p.is_file()):
+            for path in walk_files(root):
                 relative = path.relative_to(repo).as_posix()
                 if relative not in expected:
                     stale.append(relative)
     return stale
+
+
+def remove_stale(repo: Path, relative: str) -> None:
+    path = repo / relative
+    path.unlink()
+    roots = {repo / d for d in GENERATED_DIRS}
+    parent = path.parent
+    while parent not in roots and not any(parent.iterdir()):
+        parent.rmdir()
+        parent = parent.parent
 
 
 def sync(repo: Path, check: bool) -> list[str]:
@@ -112,13 +146,13 @@ def sync(repo: Path, check: bool) -> list[str]:
     changed = []
     for relative, content in sorted(expected.items()):
         path = repo / relative
-        if not path.is_file() or path.read_text() != content:
+        if not path.is_file() or read_text(path) != content:
             changed.append(relative)
             if not check:
                 path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(content)
+                path.write_text(content, newline="\n")
     for relative in stale_files(repo, expected):
-        changed.append(f"{relative} (stale)")
+        changed.append(f"{relative}{STALE_SUFFIX}")
         if not check:
-            (repo / relative).unlink()
+            remove_stale(repo, relative)
     return changed

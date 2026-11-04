@@ -94,3 +94,77 @@ def test_cli_check_exit_codes(repo, capsys):
     assert main(["sync-agents", "--repo", str(repo), "--check"]) == 0
     (repo / "AGENTS.md").unlink()
     assert main(["sync-agents", "--repo", str(repo), "--check"]) == 2
+
+
+def test_malformed_yaml_is_a_skill_error(repo):
+    text = SKILL.replace("Use when demonstrating the generator", "Use when a: b")
+    (repo / "skills" / "dwh-demo" / "SKILL.md").write_text(text)
+
+    with pytest.raises(SkillError, match="not valid YAML"):
+        load_skills(repo / "skills")
+    assert main(["sync-agents", "--repo", str(repo), "--check"]) == 2
+
+
+def test_non_mapping_frontmatter_is_a_skill_error(repo):
+    (repo / "skills" / "dwh-demo" / "SKILL.md").write_text("---\n- a\n- b\n---\nBody\n")
+
+    with pytest.raises(SkillError, match="must be a YAML mapping"):
+        load_skills(repo / "skills")
+
+
+def test_hidden_files_in_a_skill_are_ignored(repo):
+    (repo / "skills" / "dwh-demo" / ".DS_Store").write_bytes(b"\x00\xff\xfe")
+    (repo / "skills" / ".hidden").mkdir()
+    (repo / "skills" / "__pycache__").mkdir()
+    (repo / "skills" / "dwh-demo" / "__pycache__").mkdir()
+    (repo / "skills" / "dwh-demo" / "__pycache__" / "x.pyc").write_bytes(b"\xff\xfe")
+
+    assert set(render(repo)) >= {".claude/skills/dwh-demo/SKILL.md"}
+    assert not any(".DS_Store" in name or "pycache" in name for name in render(repo))
+
+
+def test_hidden_files_in_generated_dirs_are_not_stale(repo):
+    sync(repo, check=False)
+    junk = repo / ".cursor" / "rules" / ".DS_Store"
+    junk.write_bytes(b"\x00\xff")
+
+    assert sync(repo, check=True) == []
+    sync(repo, check=False)
+    assert junk.exists()
+
+
+def test_binary_file_in_a_skill_is_a_skill_error(repo):
+    (repo / "skills" / "dwh-demo" / "notes.bin").write_bytes(b"\xff\xfe\x00")
+
+    with pytest.raises(SkillError, match="notes.bin"):
+        render(repo)
+
+
+def test_write_reports_removals_and_prunes_empty_directories(repo, capsys):
+    sync(repo, check=False)
+    stale = repo / ".claude" / "skills" / "gone" / "deep" / "SKILL.md"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("x\n")
+    capsys.readouterr()
+
+    assert main(["sync-agents", "--repo", str(repo)]) == 0
+
+    out = capsys.readouterr().out
+    assert "removed .claude/skills/gone/deep/SKILL.md" in out
+    assert "(stale)" not in out
+    assert not (repo / ".claude" / "skills" / "gone").exists()
+    assert (repo / ".claude" / "skills" / "dwh-demo").is_dir()
+
+
+def test_check_leaves_the_tree_untouched(repo):
+    before = sorted(p.relative_to(repo).as_posix() for p in repo.rglob("*"))
+
+    assert sync(repo, check=True) != []
+
+    assert sorted(p.relative_to(repo).as_posix() for p in repo.rglob("*")) == before
+
+
+def test_generated_files_use_lf_newlines(repo):
+    sync(repo, check=False)
+
+    assert b"\r" not in (repo / "CLAUDE.md").read_bytes()

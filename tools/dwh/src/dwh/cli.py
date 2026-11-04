@@ -12,7 +12,7 @@ from dwh.findings import Finding
 from dwh.lint import Context, run_lint
 from dwh.manifest import load_manifest
 from dwh.standards import check_standards
-from dwh.sync_agents import SkillError, sync
+from dwh.sync_agents import STALE_SUFFIX, SkillError, sync
 from dwh.validate import validate
 from dwh.warehouse import load_warehouse
 
@@ -102,7 +102,10 @@ def cmd_sync_agents(args: argparse.Namespace) -> int:
         print("agent files are up to date")
         return 0
     for relative in changed:
-        print(f"wrote {relative}")
+        if relative.endswith(STALE_SUFFIX):
+            print(f"removed {relative.removesuffix(STALE_SUFFIX)}")
+        else:
+            print(f"wrote {relative}")
     return 0
 
 
