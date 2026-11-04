@@ -634,7 +634,9 @@ def test_direct_pins_are_locked_at_the_same_version(requirements, lock):
     locked = pins(REPO / lock)
 
     for name, version in direct.items():
-        assert locked.get(name) == version, f"{name}: {requirements} pins {version}, {lock} has {locked.get(name)}"
+        assert locked.get(name) == version, (
+            f"{name}: {requirements} pins {version}, {lock} has {locked.get(name)}"
+        )
 ```
 
 Add to the `Makefile` (and to `.PHONY`):
@@ -1353,7 +1355,10 @@ MINIMAL: dict = {
                     {"dimension": "shop"},
                 ],
             },
-            {"process": "shipment", "dimensions": [{"dimension": "date", "role": "ship_date"}, {"dimension": "customer"}]},
+            {
+                "process": "shipment",
+                "dimensions": [{"dimension": "date", "role": "ship_date"}, {"dimension": "customer"}],
+            },
         ]
     },
     "metrics": {
@@ -1365,7 +1370,13 @@ MINIMAL: dict = {
                 "aggregation": "sum",
                 "additivity": "additive",
             },
-            {"name": "order", "process": "order", "description": "Orders.", "aggregation": "count", "additivity": "additive"},
+            {
+                "name": "order",
+                "process": "order",
+                "description": "Orders.",
+                "aggregation": "count",
+                "additivity": "additive",
+            },
             {
                 "name": "order_buyer",
                 "process": "order",
@@ -1731,7 +1742,9 @@ def y02_unique_names(wh: Warehouse) -> Iterator[Finding]:
             if n > 1:
                 yield Finding(wh.path(file), "DWH-Y02", f"{key}: {name!r} is defined {n} times")
     metric_names = Counter(
-        metric["name"] for section in ("atomic", "derived", "calculated") for metric in wh.items("metrics", section)
+        metric["name"]
+        for section in ("atomic", "derived", "calculated")
+        for metric in wh.items("metrics", section)
     )
     for name, n in sorted(metric_names.items()):
         if n > 1:
@@ -1759,7 +1772,9 @@ def y03_references(wh: Warehouse) -> Iterator[Finding]:
     for t in wh.items("modifiers", "modifier_types"):
         yield from missing("modifiers", f"modifier type {t['name']}", t["domain"], domains, "domain")
     for m in wh.items("modifiers", "modifiers"):
-        yield from missing("modifiers", f"modifier {m['name']}", m["type"], set(wh.modifier_types), "modifier type")
+        yield from missing(
+            "modifiers", f"modifier {m['name']}", m["type"], set(wh.modifier_types), "modifier type"
+        )
         for p in m["processes"]:
             yield from missing("modifiers", f"modifier {m['name']}", p, processes, "process")
     for a in wh.items("metrics", "atomic"):
@@ -1783,7 +1798,9 @@ def y03_references(wh: Warehouse) -> Iterator[Finding]:
 def y04_date_dimension(wh: Warehouse) -> Iterator[Finding]:
     date = wh.dimensions.get("date")
     if date is None or date["scope"] != "pub":
-        yield Finding(wh.path("dimensions"), "DWH-Y04", "dimension 'date' with scope 'pub' is mandatory (dim_pub_date)")
+        yield Finding(
+            wh.path("dimensions"), "DWH-Y04", "dimension 'date' with scope 'pub' is mandatory (dim_pub_date)"
+        )
 
 
 def name_tokens(name: str) -> list[str]:
@@ -1834,7 +1851,13 @@ def y06_scd1_attributes_are_current(wh: Warehouse) -> Iterator[Finding]:
                 )
 
 
-YAML_RULES = [y02_unique_names, y03_references, y04_date_dimension, y05_glossary, y06_scd1_attributes_are_current]
+YAML_RULES = [
+    y02_unique_names,
+    y03_references,
+    y04_date_dimension,
+    y05_glossary,
+    y06_scd1_attributes_are_current,
+]
 ```
 
 Create `tools/dwh/src/dwh/validate.py`:
@@ -2014,8 +2037,18 @@ class ManifestBuilder:
         }
         return uid
 
-    def model(self, name, path, *, deps=(), columns=None, meta=None, contract=False, description="A model.",
-              resource_type="model") -> str:
+    def model(
+        self,
+        name,
+        path,
+        *,
+        deps=(),
+        columns=None,
+        meta=None,
+        contract=False,
+        description="A model.",
+        resource_type="model",
+    ) -> str:
         uid = f"{resource_type}.{PROJECT}.{name}"
         self._nodes[uid] = {
             "unique_id": uid,
@@ -2059,8 +2092,12 @@ class ManifestBuilder:
         return self.test("not_null", model, column=column)
 
     def unique_combo(self, model, columns) -> str:
-        return self.test("unique_combination_of_columns", model, namespace="dbt_utils",
-                         combination_of_columns=list(columns))
+        return self.test(
+            "unique_combination_of_columns",
+            model,
+            namespace="dbt_utils",
+            combination_of_columns=list(columns),
+        )
 
     def relationships(self, model, column, to, field) -> str:
         return self.test("relationships", model, column=column, to=f"ref('{to.split('.')[-1]}')", field=field)
@@ -2100,66 +2137,113 @@ def good_project() -> tuple[ManifestBuilder, dict[str, str]]:
     """ODS -> SCD4 DIM -> DWD -> DWS -> ADS for fixtures.warehouse.MINIMAL; clean for every lint family."""
     b = ManifestBuilder()
     ids: dict[str, str] = {}
-    ids["orders"] = b.source("shop", "orders", meta={
-        "timezone": "Asia/Ho_Chi_Minh", "load": "di", "watermark": "updated_at", "delete_handling": "soft_delete_flag",
-    })
-    ids["customers"] = b.source("shop", "customers", meta={
-        "timezone": "Asia/Ho_Chi_Minh", "load": "df", "delete_handling": "none",
-    })
+    ids["orders"] = b.source(
+        "shop",
+        "orders",
+        meta={
+            "timezone": "Asia/Ho_Chi_Minh",
+            "load": "di",
+            "watermark": "updated_at",
+            "delete_handling": "soft_delete_flag",
+        },
+    )
+    ids["customers"] = b.source(
+        "shop",
+        "customers",
+        meta={
+            "timezone": "Asia/Ho_Chi_Minh",
+            "load": "df",
+            "delete_handling": "none",
+        },
+    )
 
-    ids["ods_orders"] = b.model("ods_shop_orders_di", "models/ods/shop/ods_shop_orders_di.sql", deps=[ids["orders"]],
-                                columns={"order_id": "Order id.", "dt": "Partition date."})
+    ids["ods_orders"] = b.model(
+        "ods_shop_orders_di",
+        "models/ods/shop/ods_shop_orders_di.sql",
+        deps=[ids["orders"]],
+        columns={"order_id": "Order id.", "dt": "Partition date."},
+    )
     b.unique_combo(ids["ods_orders"], ["order_id", "dt"])
     b.not_null(ids["ods_orders"], "order_id")
     b.not_null(ids["ods_orders"], "dt")
 
-    ids["ods_customers"] = b.model("ods_shop_customers_df", "models/ods/shop/ods_shop_customers_df.sql",
-                                   deps=[ids["customers"]], columns={"customer_id": "Customer id.", "dt": "Partition date."})
+    ids["ods_customers"] = b.model(
+        "ods_shop_customers_df",
+        "models/ods/shop/ods_shop_customers_df.sql",
+        deps=[ids["customers"]],
+        columns={"customer_id": "Customer id.", "dt": "Partition date."},
+    )
     b.unique_combo(ids["ods_customers"], ["customer_id", "dt"])
     b.not_null(ids["ods_customers"], "customer_id")
     b.not_null(ids["ods_customers"], "dt")
 
-    ids["hist"] = b.snapshot("dim_pub_customer_hist", "snapshots/dim_pub_customer_hist.yml",
-                             deps=[ids["ods_customers"]],
-                             columns={"customer_key": "Durable key.", "customer_id": "Customer id.", "city": "City."})
+    ids["hist"] = b.snapshot(
+        "dim_pub_customer_hist",
+        "snapshots/dim_pub_customer_hist.yml",
+        deps=[ids["ods_customers"]],
+        columns={"customer_key": "Durable key.", "customer_id": "Customer id.", "city": "City."},
+    )
 
-    ids["dim_customer"] = b.model("dim_pub_customer", "models/dim/pub/dim_pub_customer.sql", deps=[ids["ods_customers"]],
-                                  contract=True,
-                                  columns={"customer_key": "Durable key.", "customer_id": "Customer id.", "city": "City."})
+    ids["dim_customer"] = b.model(
+        "dim_pub_customer",
+        "models/dim/pub/dim_pub_customer.sql",
+        deps=[ids["ods_customers"]],
+        contract=True,
+        columns={"customer_key": "Durable key.", "customer_id": "Customer id.", "city": "City."},
+    )
     b.unique(ids["dim_customer"], "customer_key")
     b.not_null(ids["dim_customer"], "customer_key")
 
-    ids["dwd_order"] = b.model("dwd_trade_order_di", "models/dwd/trade/dwd_trade_order_di.sql",
-                               deps=[ids["ods_orders"], ids["dim_customer"], ids["hist"]], contract=True,
-                               meta={"process": "order"},
-                               columns={"order_id": "Order id.", "customer_key": "Customer durable key.",
-                                        "order_amt": "Order amount.", "dt": "Partition date."})
+    ids["dwd_order"] = b.model(
+        "dwd_trade_order_di",
+        "models/dwd/trade/dwd_trade_order_di.sql",
+        deps=[ids["ods_orders"], ids["dim_customer"], ids["hist"]],
+        contract=True,
+        meta={"process": "order"},
+        columns={
+            "order_id": "Order id.",
+            "customer_key": "Customer durable key.",
+            "order_amt": "Order amount.",
+            "dt": "Partition date.",
+        },
+    )
     b.unique_combo(ids["dwd_order"], ["order_id", "dt"])
     b.not_null(ids["dwd_order"], "order_id")
     b.not_null(ids["dwd_order"], "dt")
     b.relationships(ids["dwd_order"], "customer_key", ids["dim_customer"], "customer_key")
 
-    ids["dws_customer"] = b.model("dws_trade_customer_1d", "models/dws/trade/dws_trade_customer_1d.sql",
-                                  deps=[ids["dwd_order"]], contract=True, meta={"grain": ["customer_key"]},
-                                  columns={
-                                      "customer_key": "Customer durable key.",
-                                      "order_amt_sum_1d": {"description": "Order amount.", "meta": {"metric": "order_amt_sum_1d"}},
-                                      "order_cnt_1d": {"description": "Orders.", "meta": {"metric": "order_cnt_1d"}},
-                                      "dt": "Partition date.",
-                                  })
+    ids["dws_customer"] = b.model(
+        "dws_trade_customer_1d",
+        "models/dws/trade/dws_trade_customer_1d.sql",
+        deps=[ids["dwd_order"]],
+        contract=True,
+        meta={"grain": ["customer_key"]},
+        columns={
+            "customer_key": "Customer durable key.",
+            "order_amt_sum_1d": {"description": "Order amount.", "meta": {"metric": "order_amt_sum_1d"}},
+            "order_cnt_1d": {"description": "Orders.", "meta": {"metric": "order_cnt_1d"}},
+            "dt": "Partition date.",
+        },
+    )
     b.unique_combo(ids["dws_customer"], ["customer_key", "dt"])
     b.not_null(ids["dws_customer"], "customer_key")
     b.not_null(ids["dws_customer"], "dt")
     b.relationships(ids["dws_customer"], "customer_key", ids["dim_customer"], "customer_key")
 
-    ids["ads_customer"] = b.model("ads_bi_customer_daily", "models/ads/bi/ads_bi_customer_daily.sql",
-                                  deps=[ids["dws_customer"], ids["dim_customer"]],
-                                  columns={
-                                      "customer_key": "Customer durable key.",
-                                      "city": "City.",
-                                      "avg_order_amt_1d": {"description": "Average order amount.", "meta": {"metric": "avg_order_amt_1d"}},
-                                      "dt": "Partition date.",
-                                  })
+    ids["ads_customer"] = b.model(
+        "ads_bi_customer_daily",
+        "models/ads/bi/ads_bi_customer_daily.sql",
+        deps=[ids["dws_customer"], ids["dim_customer"]],
+        columns={
+            "customer_key": "Customer durable key.",
+            "city": "City.",
+            "avg_order_amt_1d": {
+                "description": "Average order amount.",
+                "meta": {"metric": "avg_order_amt_1d"},
+            },
+            "dt": "Partition date.",
+        },
+    )
     b.unique_combo(ids["ads_customer"], ["customer_key", "dt"])
     b.not_null(ids["ads_customer"], "customer_key")
     b.not_null(ids["ads_customer"], "dt")
@@ -2229,8 +2313,12 @@ def test_loads_models_snapshots_sources_and_tests(write_manifest):
     project = load_manifest(write_manifest(builder))
 
     assert {n.name for n in project.models()} == {
-        "ods_shop_orders_di", "ods_shop_customers_df", "dim_pub_customer",
-        "dwd_trade_order_di", "dws_trade_customer_1d", "ads_bi_customer_daily",
+        "ods_shop_orders_di",
+        "ods_shop_customers_df",
+        "dim_pub_customer",
+        "dwd_trade_order_di",
+        "dws_trade_customer_1d",
+        "ads_bi_customer_daily",
     }
     hist = project.nodes[ids["hist"]]
     assert hist.resource_type == "snapshot"
@@ -2238,7 +2326,9 @@ def test_loads_models_snapshots_sources_and_tests(write_manifest):
     assert project.nodes[ids["ods_orders"]].layer == "ods"
     assert project.nodes[ids["ods_orders"]].folder == "shop"
     assert [n.name for n in project.refs(project.nodes[ids["dwd_order"]])] == [
-        "ods_shop_orders_di", "dim_pub_customer", "dim_pub_customer_hist",
+        "ods_shop_orders_di",
+        "dim_pub_customer",
+        "dim_pub_customer_hist",
     ]
     assert [s.name for s in project.source_deps(project.nodes[ids["ods_orders"]])] == ["orders"]
     assert len(project.tests_for(ids["dwd_order"])) == 4
@@ -2251,8 +2341,12 @@ def test_loads_models_snapshots_sources_and_tests(write_manifest):
 def test_ignores_nodes_from_other_packages(write_manifest):
     builder, ids = good_project()
     manifest = builder.build()
-    foreign = dict(manifest["nodes"][ids["dim_customer"]], package_name="dbt_utils",
-                   unique_id="model.dbt_utils.x", name="x")
+    foreign = dict(
+        manifest["nodes"][ids["dim_customer"]],
+        package_name="dbt_utils",
+        unique_id="model.dbt_utils.x",
+        name="x",
+    )
     manifest["nodes"]["model.dbt_utils.x"] = foreign
 
     class Raw:
@@ -2425,15 +2519,26 @@ def test_cli_lint_reports_findings_and_exits_1(make_warehouse, write_manifest, c
 
     out = capsys.readouterr().out
     assert rc == 1
-    assert "models/dwd/trade/dwd_trade_order_di.sql: DWH-D01 dwd_trade_order_di: model has no description" in out
+    assert (
+        "models/dwd/trade/dwd_trade_order_di.sql: DWH-D01 dwd_trade_order_di: model has no description" in out
+    )
 
 
 def test_cli_lint_select_filters_by_code_prefix(make_warehouse, write_manifest, capsys):
     builder, ids = good_project()
     builder.node(ids["dwd_order"])["description"] = ""
 
-    rc = main(["lint", "--warehouse", str(make_warehouse()), "--manifest", str(write_manifest(builder)),
-               "--select", "DWH-T"])
+    rc = main(
+        [
+            "lint",
+            "--warehouse",
+            str(make_warehouse()),
+            "--manifest",
+            str(write_manifest(builder)),
+            "--select",
+            "DWH-T",
+        ]
+    )
 
     assert rc == 0
     assert capsys.readouterr().out.strip() == "0 finding(s)"
@@ -2442,8 +2547,15 @@ def test_cli_lint_select_filters_by_code_prefix(make_warehouse, write_manifest, 
 def test_cli_lint_runs_yaml_validation_first(make_warehouse, write_manifest, capsys):
     builder, _ = good_project()
 
-    rc = main(["lint", "--warehouse", str(make_warehouse(drop=["glossary"])), "--manifest",
-               str(write_manifest(builder))])
+    rc = main(
+        [
+            "lint",
+            "--warehouse",
+            str(make_warehouse(drop=["glossary"])),
+            "--manifest",
+            str(write_manifest(builder)),
+        ]
+    )
 
     assert rc == 1
     assert "DWH-Y01" in capsys.readouterr().out
@@ -2671,7 +2783,9 @@ def d02_column_description(ctx: Context) -> Iterator[Finding]:
 def d03_source_description(ctx: Context) -> Iterator[Finding]:
     for source in ctx.project.sources.values():
         if not source.description.strip():
-            yield Finding(source.path, "DWH-D03", f"{source.source_name}.{source.name}: source table has no description")
+            yield Finding(
+                source.path, "DWH-D03", f"{source.source_name}.{source.name}: source table has no description"
+            )
 
 
 RULES = [d01_model_description, d02_column_description, d03_source_description]
@@ -2723,7 +2837,11 @@ def s01_source_meta(ctx: Context) -> Iterator[Finding]:
 def s02_di_without_delete_handling(ctx: Context) -> Iterator[Finding]:
     for source in ctx.project.sources.values():
         meta = source.meta
-        if meta.get("load") == "di" and meta.get("delete_handling") == "none" and not meta.get("delete_handling_reason"):
+        if (
+            meta.get("load") == "di"
+            and meta.get("delete_handling") == "none"
+            and not meta.get("delete_handling_reason")
+        ):
             yield Finding(
                 source.path,
                 "DWH-S02",
@@ -2770,7 +2888,9 @@ def t01_grain_test(ctx: Context) -> Iterator[Finding]:
     for node in ctx.project.models():
         if not any(is_uniqueness(t) for t in ctx.project.tests_for(node.unique_id)):
             yield Finding(
-                node.path, "DWH-T01", f"{node.name}: no grain test (unique or dbt_utils.unique_combination_of_columns)"
+                node.path,
+                "DWH-T01",
+                f"{node.name}: no grain test (unique or dbt_utils.unique_combination_of_columns)",
             )
 
 
@@ -2785,7 +2905,9 @@ def t02_grain_columns_not_null(ctx: Context) -> Iterator[Finding]:
 def t03_contract(ctx: Context) -> Iterator[Finding]:
     for node in ctx.project.models():
         if node.layer in CONTRACT_LAYERS and not node.contract_enforced:
-            yield Finding(node.path, "DWH-T03", f"{node.name}: {node.layer} models need contract: {{enforced: true}}")
+            yield Finding(
+                node.path, "DWH-T03", f"{node.name}: {node.layer} models need contract: {{enforced: true}}"
+            )
 
 
 def t04_key_relationships(ctx: Context) -> Iterator[Finding]:
@@ -2796,7 +2918,9 @@ def t04_key_relationships(ctx: Context) -> Iterator[Finding]:
         for column in sorted(node.columns):
             if column.endswith("_key") and column not in related:
                 yield Finding(
-                    node.path, "DWH-T04", f"{node.name}.{column}: key column has no relationships test to its dimension"
+                    node.path,
+                    "DWH-T04",
+                    f"{node.name}.{column}: key column has no relationships test to its dimension",
                 )
 
 
@@ -2948,14 +3072,20 @@ def test_n05_name_token_not_in_glossary(lint):
 def test_n06_column_token_not_in_glossary(lint):
     builder, ids = good_project()
     builder.node(ids["dwd_order"])["columns"]["order_segment"] = {
-        "name": "order_segment", "description": "Segment.", "meta": {},
+        "name": "order_segment",
+        "description": "Segment.",
+        "meta": {},
     }
     assert lint(builder, prefix="DWH-N") == ["DWH-N06"]
 
 
 def test_ods_columns_are_exempt_from_the_glossary(lint):
     builder, ids = good_project()
-    builder.node(ids["ods_orders"])["columns"]["weird_col"] = {"name": "weird_col", "description": "X.", "meta": {}}
+    builder.node(ids["ods_orders"])["columns"]["weird_col"] = {
+        "name": "weird_col",
+        "description": "X.",
+        "meta": {},
+    }
     assert lint(builder, prefix="DWH-N") == []
 ```
 
@@ -3011,8 +3141,12 @@ def test_l04_ads_may_read_dwd_only_with_a_written_reason(lint):
 
 def test_l04_accumulating_snapshot_reads_transaction_facts_not_ods(lint):
     builder, ids = good_project()
-    good = builder.model("dwd_trade_shipment_di", "models/dwd/trade/dwd_trade_shipment_di.sql",
-                         deps=[ids["dwd_order"]], meta={"process": "shipment"})
+    good = builder.model(
+        "dwd_trade_shipment_di",
+        "models/dwd/trade/dwd_trade_shipment_di.sql",
+        deps=[ids["dwd_order"]],
+        meta={"process": "shipment"},
+    )
     assert lint(builder, prefix="DWH-L") == []
 
     builder.node(good)["depends_on"]["nodes"].append(ids["ods_orders"])
@@ -3078,13 +3212,19 @@ def parse_name(node: Node) -> dict[str, str] | None:
 
 
 def unknown_tokens(name: str, words: set[str]) -> list[str]:
-    return [t for t in name.split("_") if t not in IGNORED_TOKENS and not NUMERIC_PERIOD.match(t) and t not in words]
+    return [
+        t
+        for t in name.split("_")
+        if t not in IGNORED_TOKENS and not NUMERIC_PERIOD.match(t) and t not in words
+    ]
 
 
 def n01_name_pattern(ctx: Context) -> Iterator[Finding]:
     for node in ctx.project.nodes.values():
         if node.layer and parse_name(node) is None:
-            yield Finding(node.path, "DWH-N01", f"{node.name}: {node.layer} names follow {TEMPLATES[node.layer]}")
+            yield Finding(
+                node.path, "DWH-N01", f"{node.name}: {node.layer} names follow {TEMPLATES[node.layer]}"
+            )
 
 
 def n02_ods_source_segment(ctx: Context) -> Iterator[Finding]:
@@ -3109,9 +3249,13 @@ def n03_domain_segment(ctx: Context) -> Iterator[Finding]:
         if parsed is None:
             continue
         if node.layer == "dim" and parsed["scope"] != "pub" and parsed["scope"] not in domains:
-            yield Finding(node.path, "DWH-N03", f"{node.name}: scope {parsed['scope']!r} is neither pub nor a domain")
+            yield Finding(
+                node.path, "DWH-N03", f"{node.name}: scope {parsed['scope']!r} is neither pub nor a domain"
+            )
         elif node.layer in ("dwd", "dws") and parsed["domain"] not in domains:
-            yield Finding(node.path, "DWH-N03", f"{node.name}: {parsed['domain']!r} is not a domain in domains.yml")
+            yield Finding(
+                node.path, "DWH-N03", f"{node.name}: {parsed['domain']!r} is not a domain in domains.yml"
+            )
 
 
 def n04_history_tables(ctx: Context) -> Iterator[Finding]:
@@ -3120,7 +3264,9 @@ def n04_history_tables(ctx: Context) -> Iterator[Finding]:
         if parsed is None:
             continue
         if node.resource_type == "snapshot" and not parsed["hist"]:
-            yield Finding(node.path, "DWH-N04", f"{node.name}: snapshots build SCD4 history tables named dim_..._hist")
+            yield Finding(
+                node.path, "DWH-N04", f"{node.name}: snapshots build SCD4 history tables named dim_..._hist"
+            )
         elif node.resource_type == "model" and parsed["hist"]:
             yield Finding(node.path, "DWH-N04", f"{node.name}: only snapshots produce _hist tables")
 
@@ -3183,13 +3329,17 @@ def is_accumulating(ctx: Context, node: Node) -> bool:
 def l01_layer_folder(ctx: Context) -> Iterator[Finding]:
     for node in ctx.project.nodes.values():
         if node.layer is None:
-            yield Finding(node.path, "DWH-L01", f"{node.name}: models live under models/<{'|'.join(LAYERS)}>/")
+            yield Finding(
+                node.path, "DWH-L01", f"{node.name}: models live under models/<{'|'.join(LAYERS)}>/"
+            )
 
 
 def l02_prefix_matches_layer(ctx: Context) -> Iterator[Finding]:
     for node in ctx.project.nodes.values():
         if node.layer and node.name.split("_", 1)[0] != node.layer:
-            yield Finding(node.path, "DWH-L02", f"{node.name}: a {node.layer} model is named {node.layer}_...")
+            yield Finding(
+                node.path, "DWH-L02", f"{node.name}: a {node.layer} model is named {node.layer}_..."
+            )
 
 
 def l03_sources_only_in_ods(ctx: Context) -> Iterator[Finding]:
@@ -3233,7 +3383,9 @@ def l04_allowed_dependencies(ctx: Context) -> Iterator[Finding]:
                 or (node.layer == "ads" and dep.layer == "dwd" and bool(node.meta.get("dwd_reason")))
             )
             if not ok:
-                yield Finding(node.path, "DWH-L04", f"{node.name} ({node.layer}) must not read {dep.name} ({dep.layer})")
+                yield Finding(
+                    node.path, "DWH-L04", f"{node.name} ({node.layer}) must not read {dep.name} ({dep.layer})"
+                )
 
 
 def l05_chain_depth(ctx: Context) -> Iterator[Finding]:
@@ -3254,7 +3406,13 @@ def l05_chain_depth(ctx: Context) -> Iterator[Finding]:
             )
 
 
-RULES = [l01_layer_folder, l02_prefix_matches_layer, l03_sources_only_in_ods, l04_allowed_dependencies, l05_chain_depth]
+RULES = [
+    l01_layer_folder,
+    l02_prefix_matches_layer,
+    l03_sources_only_in_ods,
+    l04_allowed_dependencies,
+    l05_chain_depth,
+]
 ```
 
 - [ ] **Step 4: Register the families and run**
@@ -3337,14 +3495,20 @@ def test_b03_process_must_have_a_bus_matrix_row(lint):
 
 def test_b04_key_column_must_be_a_bus_matrix_dimension_or_role(lint):
     builder, ids = good_project()
-    builder.node(ids["dwd_order"])["columns"]["seller_key"] = {"name": "seller_key", "description": "S.", "meta": {}}
+    builder.node(ids["dwd_order"])["columns"]["seller_key"] = {
+        "name": "seller_key",
+        "description": "S.",
+        "meta": {},
+    }
     assert lint(builder, prefix="DWH-B") == ["DWH-B04"]
 
 
 def test_b04_role_names_are_accepted(lint):
     builder, ids = good_project()
     builder.node(ids["dwd_order"])["columns"]["order_date_key"] = {
-        "name": "order_date_key", "description": "Order date.", "meta": {},
+        "name": "order_date_key",
+        "description": "Order date.",
+        "meta": {},
     }
     assert lint(builder, prefix="DWH-B") == []
 ```
@@ -3362,8 +3526,11 @@ from dwh.rules.metrics import metric_column
     ("derived", "atomic", "expected"),
     [
         ({"period": "1d"}, {"name": "order_amt", "aggregation": "sum"}, "order_amt_sum_1d"),
-        ({"period": "nd", "days": 30, "modifiers": ["app"]}, {"name": "order_amt", "aggregation": "sum"},
-         "app_order_amt_sum_30d"),
+        (
+            {"period": "nd", "days": 30, "modifiers": ["app"]},
+            {"name": "order_amt", "aggregation": "sum"},
+            "app_order_amt_sum_30d",
+        ),
         ({"period": "td"}, {"name": "order", "aggregation": "count"}, "order_cnt_td"),
         ({"period": "1d"}, {"name": "order_buyer", "aggregation": "count_distinct"}, "order_buyer_dcnt_1d"),
     ],
@@ -3394,17 +3561,26 @@ def test_m02_derived_metric_on_a_non_additive_atomic(lint):
     builder, _ = good_project()
 
     def mutate(files):
-        files["metrics"]["derived"].append({
-            "name": "order_buyer_dcnt_1d", "atomic": "order_buyer", "period": "1d",
-            "grain": ["customer"], "description": "Distinct buyers.",
-        })
+        files["metrics"]["derived"].append(
+            {
+                "name": "order_buyer_dcnt_1d",
+                "atomic": "order_buyer",
+                "period": "1d",
+                "grain": ["customer"],
+                "description": "Distinct buyers.",
+            }
+        )
 
     assert lint(builder, mutate=mutate, prefix="DWH-M") == ["DWH-M02"]
 
 
 def test_m03_dws_column_that_is_not_grain_dt_or_metric(lint):
     builder, ids = good_project()
-    builder.node(ids["dws_customer"])["columns"]["city"] = {"name": "city", "description": "City.", "meta": {}}
+    builder.node(ids["dws_customer"])["columns"]["city"] = {
+        "name": "city",
+        "description": "City.",
+        "meta": {},
+    }
     assert lint(builder, prefix="DWH-M") == ["DWH-M03"]
 
 
@@ -3437,7 +3613,9 @@ def test_m05_one_period_per_dws_table(lint):
 
 def test_m06_calculated_metric_must_not_be_stored_in_dws(lint):
     builder, ids = good_project()
-    builder.node(ids["dws_customer"])["columns"]["avg_order_amt_1d"] = column("avg_order_amt_1d", "avg_order_amt_1d")
+    builder.node(ids["dws_customer"])["columns"]["avg_order_amt_1d"] = column(
+        "avg_order_amt_1d", "avg_order_amt_1d"
+    )
     assert lint(builder, prefix="DWH-M") == ["DWH-M06"]
 ```
 
@@ -3464,7 +3642,9 @@ def b01_dwd_declares_a_process(ctx: Context) -> Iterator[Finding]:
     for node in dwd_models(ctx):
         process = node.meta.get("process")
         if not process:
-            yield Finding(node.path, "DWH-B01", f"{node.name}: DWD models declare meta.process (from processes.yml)")
+            yield Finding(
+                node.path, "DWH-B01", f"{node.name}: DWD models declare meta.process (from processes.yml)"
+            )
         elif process not in ctx.warehouse.processes:
             yield Finding(node.path, "DWH-B01", f"{node.name}: unknown process {process!r}")
 
@@ -3488,7 +3668,9 @@ def b03_process_in_bus_matrix(ctx: Context) -> Iterator[Finding]:
     for node in dwd_models(ctx):
         process = node.meta.get("process")
         if process in ctx.warehouse.processes and process not in ctx.warehouse.bus:
-            yield Finding(node.path, "DWH-B03", f"{node.name}: process {process} has no row in bus_matrix.yml")
+            yield Finding(
+                node.path, "DWH-B03", f"{node.name}: process {process} has no row in bus_matrix.yml"
+            )
 
 
 def b04_keys_are_bus_dimensions(ctx: Context) -> Iterator[Finding]:
@@ -3496,7 +3678,9 @@ def b04_keys_are_bus_dimensions(ctx: Context) -> Iterator[Finding]:
         row = ctx.warehouse.bus.get(node.meta.get("process"))
         if row is None:
             continue
-        allowed = {c["dimension"] for c in row["dimensions"]} | {c["role"] for c in row["dimensions"] if "role" in c}
+        allowed = {c["dimension"] for c in row["dimensions"]} | {
+            c["role"] for c in row["dimensions"] if "role" in c
+        }
         for column in sorted(node.columns):
             if column.endswith("_key") and column[: -len("_key")] not in allowed:
                 yield Finding(
@@ -3507,7 +3691,12 @@ def b04_keys_are_bus_dimensions(ctx: Context) -> Iterator[Finding]:
                 )
 
 
-RULES = [b01_dwd_declares_a_process, b02_dwd_name_matches_process, b03_process_in_bus_matrix, b04_keys_are_bus_dimensions]
+RULES = [
+    b01_dwd_declares_a_process,
+    b02_dwd_name_matches_process,
+    b03_process_in_bus_matrix,
+    b04_keys_are_bus_dimensions,
+]
 ```
 
 - [ ] **Step 3: Implement `rules/metrics.py`**
@@ -3564,13 +3753,17 @@ def m03_dws_columns(ctx: Context) -> Iterator[Finding]:
             continue
         grain = node.meta.get("grain")
         if not isinstance(grain, list) or not grain:
-            yield Finding(node.path, "DWH-M03", f"{node.name}: DWS models declare meta.grain (their grain columns)")
+            yield Finding(
+                node.path, "DWH-M03", f"{node.name}: DWS models declare meta.grain (their grain columns)"
+            )
             grain = []
         for column in node.columns.values():
             if column.name in grain or column.name == "dt" or column.meta.get("metric"):
                 continue
             yield Finding(
-                node.path, "DWH-M03", f"{node.name}.{column.name}: DWS columns are grain columns, dt, or metrics (meta.metric)"
+                node.path,
+                "DWH-M03",
+                f"{node.name}.{column.name}: DWS columns are grain columns, dt, or metrics (meta.metric)",
             )
 
 
@@ -3589,10 +3782,14 @@ def m04_metric_columns(ctx: Context) -> Iterator[Finding]:
             if metric not in known:
                 kind = "derived" if node.layer == "dws" else "derived or calculated"
                 yield Finding(
-                    node.path, "DWH-M04", f"{node.name}.{column.name}: meta.metric {metric!r} is not a {kind} metric"
+                    node.path,
+                    "DWH-M04",
+                    f"{node.name}.{column.name}: meta.metric {metric!r} is not a {kind} metric",
                 )
             elif column.name != metric:
-                yield Finding(node.path, "DWH-M04", f"{node.name}.{column.name}: column must be named {metric}")
+                yield Finding(
+                    node.path, "DWH-M04", f"{node.name}.{column.name}: column must be named {metric}"
+                )
 
 
 def m05_one_period_per_dws(ctx: Context) -> Iterator[Finding]:
@@ -3704,26 +3901,45 @@ def warehouse(mutate=None) -> Warehouse:
 
 def add_crm(files):
     files["domains"]["domains"].append({"name": "crm", "description": "CRM.", "owner": "data-eng"})
-    files["processes"]["processes"].append({
-        "name": "visit", "domain": "crm", "description": "A visit.", "fact_type": "transaction",
-        "grain": "One row per visit.",
-    })
-    files["metrics"]["atomic"].append({
-        "name": "visit", "process": "visit", "description": "Visits.", "aggregation": "count",
-        "additivity": "additive",
-    })
+    files["processes"]["processes"].append(
+        {
+            "name": "visit",
+            "domain": "crm",
+            "description": "A visit.",
+            "fact_type": "transaction",
+            "grain": "One row per visit.",
+        }
+    )
+    files["metrics"]["atomic"].append(
+        {
+            "name": "visit",
+            "process": "visit",
+            "description": "Visits.",
+            "aggregation": "count",
+            "additivity": "additive",
+        }
+    )
 
 
 def test_added_concepts_lists_new_domains_processes_dimensions_and_atomic_metrics():
-    assert added_concepts(warehouse(), warehouse(add_crm)) == ["domain crm", "process visit", "atomic metric visit"]
+    assert added_concepts(warehouse(), warehouse(add_crm)) == [
+        "domain crm",
+        "process visit",
+        "atomic metric visit",
+    ]
 
 
 def test_reuse_changes_add_no_concepts():
     def add_derived(files):
-        files["metrics"]["derived"].append({
-            "name": "order_amt_sum_td", "atomic": "order_amt", "period": "td", "grain": ["customer"],
-            "description": "Lifetime order amount.",
-        })
+        files["metrics"]["derived"].append(
+            {
+                "name": "order_amt_sum_td",
+                "atomic": "order_amt",
+                "period": "td",
+                "grain": ["customer"],
+                "description": "Lifetime order amount.",
+            }
+        )
 
     assert added_concepts(warehouse(), warehouse(add_derived)) == []
 
@@ -3732,8 +3948,12 @@ def test_gate_passes_with_label_and_existing_design_record(tmp_path):
     (tmp_path / "docs" / "designs").mkdir(parents=True)
     (tmp_path / "docs" / "designs" / "2026-11-05-crm.md").write_text("# CRM\n")
 
-    findings = check_gate(["domain crm"], body="Design: docs/designs/2026-11-05-crm.md",
-                          labels=["design-approved"], repo_root=tmp_path)
+    findings = check_gate(
+        ["domain crm"],
+        body="Design: docs/designs/2026-11-05-crm.md",
+        labels=["design-approved"],
+        repo_root=tmp_path,
+    )
 
     assert findings == []
 
@@ -3748,8 +3968,9 @@ def test_gate_requires_the_label(tmp_path):
 
 
 def test_gate_requires_a_link_to_an_existing_design_record(tmp_path):
-    findings = check_gate(["domain crm"], body="see docs/designs/missing.md", labels=["design-approved"],
-                          repo_root=tmp_path)
+    findings = check_gate(
+        ["domain crm"], body="see docs/designs/missing.md", labels=["design-approved"], repo_root=tmp_path
+    )
 
     assert [f.code for f in findings] == ["DWH-G02"]
 
@@ -3759,8 +3980,11 @@ def test_gate_is_silent_without_additions(tmp_path):
 
 
 def git(repo, *args):
-    subprocess.run(["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
-                   check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "-c", "user.name=t", "-c", "user.email=t@example.com", *args],
+        check=True,
+        capture_output=True,
+    )
 
 
 def test_load_warehouse_at_reads_the_base_commit_and_cli_end_to_end(tmp_path, capsys):
@@ -3770,8 +3994,9 @@ def test_load_warehouse_at_reads_the_base_commit_and_cli_end_to_end(tmp_path, ca
     write_warehouse(repo / "warehouse")
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", "base")
-    base = subprocess.run(["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True,
-                          text=True).stdout.strip()
+    base = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
     data = load_warehouse(repo / "warehouse").data
     add_crm(data)
     for name in ("domains", "processes", "metrics"):
@@ -3781,8 +4006,19 @@ def test_load_warehouse_at_reads_the_base_commit_and_cli_end_to_end(tmp_path, ca
 
     event = tmp_path / "event.json"
     event.write_text(json.dumps({"pull_request": {"body": "no design", "labels": []}}))
-    rc = main(["design-gate", "--base", base, "--event", str(event), "--warehouse", str(repo / "warehouse"),
-               "--repo", str(repo)])
+    rc = main(
+        [
+            "design-gate",
+            "--base",
+            base,
+            "--event",
+            str(event),
+            "--warehouse",
+            str(repo / "warehouse"),
+            "--repo",
+            str(repo),
+        ]
+    )
 
     out = capsys.readouterr().out
     assert rc == 1
@@ -3798,8 +4034,19 @@ def test_cli_rejects_an_unknown_base_ref(tmp_path, capsys):
     event = tmp_path / "event.json"
     event.write_text(json.dumps({"pull_request": {"body": "", "labels": []}}))
 
-    rc = main(["design-gate", "--base", "no-such-ref", "--event", str(event), "--warehouse",
-               str(repo / "warehouse"), "--repo", str(repo)])
+    rc = main(
+        [
+            "design-gate",
+            "--base",
+            "no-such-ref",
+            "--event",
+            str(event),
+            "--warehouse",
+            str(repo / "warehouse"),
+            "--repo",
+            str(repo),
+        ]
+    )
 
     assert rc == 2
     assert "no-such-ref" in capsys.readouterr().err
@@ -3850,7 +4097,11 @@ def check_gate(added: list[str], *, body: str, labels: list[str], repo_root: Pat
     links = [link for link in DESIGN_LINK.findall(body or "") if (repo_root / link).is_file()]
     if not links:
         findings.append(
-            Finding("warehouse/", "DWH-G02", f"adds {what}: the PR description must link an existing docs/designs/*.md")
+            Finding(
+                "warehouse/",
+                "DWH-G02",
+                f"adds {what}: the PR description must link an existing docs/designs/*.md",
+            )
         )
     return findings
 
@@ -4015,7 +4266,9 @@ def test_cli_catalog_writes_the_page(make_warehouse, tmp_path):
 
 
 def test_cli_catalog_refuses_invalid_yaml(make_warehouse, tmp_path, capsys):
-    rc = main(["catalog", "--warehouse", str(make_warehouse(drop=["periods"])), "--out", str(tmp_path / "site")])
+    rc = main(
+        ["catalog", "--warehouse", str(make_warehouse(drop=["periods"])), "--out", str(tmp_path / "site")]
+    )
 
     assert rc == 1
     assert "DWH-Y01" in capsys.readouterr().out
@@ -4072,38 +4325,105 @@ def period_label(derived: dict) -> str:
 
 def render_catalog(wh: Warehouse, dbt_docs_link: str | None) -> str:
     sections = [
-        ("Domains", table(["name", "owner", "description"],
-                          [[d["name"], d["owner"], d["description"]] for d in wh.domains.values()])),
-        ("Business processes", table(["name", "domain", "fact type", "grain", "description"],
-                                     [[p["name"], p["domain"], p["fact_type"], p["grain"], p["description"]]
-                                      for p in wh.processes.values()])),
-        ("Dimensions", table(["name", "scope", "history", "natural key", "attributes"],
-                             [[d["name"], d["scope"], d["history"], ", ".join(d["natural_key"]),
-                               ", ".join(f"{a['name']} ({a['history']})" for a in d["attributes"])]
-                              for d in wh.dimensions.values()])),
+        (
+            "Domains",
+            table(
+                ["name", "owner", "description"],
+                [[d["name"], d["owner"], d["description"]] for d in wh.domains.values()],
+            ),
+        ),
+        (
+            "Business processes",
+            table(
+                ["name", "domain", "fact type", "grain", "description"],
+                [
+                    [p["name"], p["domain"], p["fact_type"], p["grain"], p["description"]]
+                    for p in wh.processes.values()
+                ],
+            ),
+        ),
+        (
+            "Dimensions",
+            table(
+                ["name", "scope", "history", "natural key", "attributes"],
+                [
+                    [
+                        d["name"],
+                        d["scope"],
+                        d["history"],
+                        ", ".join(d["natural_key"]),
+                        ", ".join(f"{a['name']} ({a['history']})" for a in d["attributes"]),
+                    ]
+                    for d in wh.dimensions.values()
+                ],
+            ),
+        ),
         ("Bus matrix", bus_matrix(wh)),
-        ("Atomic metrics", table(["name", "process", "aggregation", "additivity", "description"],
-                                 [[a["name"], a["process"], a["aggregation"], a["additivity"], a["description"]]
-                                  for a in wh.atomic.values()])),
-        ("Derived metrics", table(["column", "atomic", "period", "modifiers", "grain", "description"],
-                                  [[d["name"], d["atomic"], period_label(d), ", ".join(d.get("modifiers", [])),
-                                    ", ".join(d["grain"]), d["description"]] for d in wh.derived.values()])),
-        ("Calculated metrics", table(["name", "formula", "inputs", "description"],
-                                     [[c["name"], c["formula"], ", ".join(c["inputs"]), c["description"]]
-                                      for c in wh.calculated.values()])),
-        ("Modifiers", table(["name", "type", "predicate", "processes", "description"],
-                            [[m["name"], m["type"], m["predicate"], ", ".join(m["processes"]), m["description"]]
-                             for m in wh.modifiers.values()])),
-        ("Glossary", table(["word", "meaning"],
-                           [[w["word"], w["meaning"]] for w in wh.items("glossary", "words")])),
+        (
+            "Atomic metrics",
+            table(
+                ["name", "process", "aggregation", "additivity", "description"],
+                [
+                    [a["name"], a["process"], a["aggregation"], a["additivity"], a["description"]]
+                    for a in wh.atomic.values()
+                ],
+            ),
+        ),
+        (
+            "Derived metrics",
+            table(
+                ["column", "atomic", "period", "modifiers", "grain", "description"],
+                [
+                    [
+                        d["name"],
+                        d["atomic"],
+                        period_label(d),
+                        ", ".join(d.get("modifiers", [])),
+                        ", ".join(d["grain"]),
+                        d["description"],
+                    ]
+                    for d in wh.derived.values()
+                ],
+            ),
+        ),
+        (
+            "Calculated metrics",
+            table(
+                ["name", "formula", "inputs", "description"],
+                [
+                    [c["name"], c["formula"], ", ".join(c["inputs"]), c["description"]]
+                    for c in wh.calculated.values()
+                ],
+            ),
+        ),
+        (
+            "Modifiers",
+            table(
+                ["name", "type", "predicate", "processes", "description"],
+                [
+                    [m["name"], m["type"], m["predicate"], ", ".join(m["processes"]), m["description"]]
+                    for m in wh.modifiers.values()
+                ],
+            ),
+        ),
+        (
+            "Glossary",
+            table(["word", "meaning"], [[w["word"], w["meaning"]] for w in wh.items("glossary", "words")]),
+        ),
     ]
     anchors = [title.lower().replace(" ", "-") for title, _ in sections]
     nav = "".join(f'<a href="#{a}">{esc(t)}</a>' for a, (t, _) in zip(anchors, sections, strict=True))
-    dbt = f'<p><a href="{esc(dbt_docs_link)}">dbt docs: models, columns and lineage</a></p>' if dbt_docs_link else ""
-    body = "".join(f'<h2 id="{a}">{esc(t)}</h2>{content}' for a, (t, content) in zip(anchors, sections, strict=True))
+    dbt = (
+        f'<p><a href="{esc(dbt_docs_link)}">dbt docs: models, columns and lineage</a></p>'
+        if dbt_docs_link
+        else ""
+    )
+    body = "".join(
+        f'<h2 id="{a}">{esc(t)}</h2>{content}' for a, (t, content) in zip(anchors, sections, strict=True)
+    )
     return (
-        "<!doctype html><html lang=\"en\"><head><meta charset=\"utf-8\">"
-        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
         f"<title>example-dwh catalogue</title><style>{STYLE}</style></head>"
         f"<body><h1>example-dwh catalogue</h1><nav>{nav}</nav>{dbt}{body}</body></html>"
     )
