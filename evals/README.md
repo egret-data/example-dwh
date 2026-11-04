@@ -30,3 +30,12 @@ make eval-all
 - `make eval-all` (`run-all.sh`) runs every scenario both ways at `HEAD`, grades and summarises. Each agent run and
   each judge call is a paid `claude -p` call: 2 runs and 6 judge calls per scenario.
 - Answers, grades and summaries go to `results/` (git-ignored).
+
+## Evals follow-ups
+
+- **Several agent runs per side.** One agent run per side is too noisy to call a scenario passing or discriminating.
+  Run each side k times (for example k=3) and decide by majority or pass rate.
+- **Measured noise** (plan 4, Task 8): with 3-sample judging, only 3 of about 70 criterion decisions split. But
+  single agent runs flipped between commits with nearly identical skills: start-urgent-pressure,
+  verify-before-done and scaffold-dws passed, then failed, with skills; debug-number-mismatch and
+  reuse-derived-metric failed, then passed, without skills.
