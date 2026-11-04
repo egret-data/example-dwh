@@ -99,7 +99,9 @@ def test_rerun_with_empty_batch_clears_the_dt_partition():
 
 def test_orders_window_is_pushed_down_to_the_source():
     """The source column is compared raw, so Trino sends the dt window to the shop database."""
-    run_dbt(MAIN_PROJECT, ["compile", "--select", "ods_shop_orders_di", "--vars", "{dt: '2026-11-02'}"], SCHEMA)
+    run_dbt(
+        MAIN_PROJECT, ["compile", "--select", "ods_shop_orders_di", "--vars", "{dt: '2026-11-02'}"], SCHEMA
+    )
     compiled = Path(f"/tmp/dbt/target-{MAIN_PROJECT.name}/compiled/example_dwh/models/ods/shop")
     sql = (compiled / "ods_shop_orders_di.sql").read_text()
 
