@@ -1,0 +1,38 @@
+---
+name: dwh-start
+description: Use when asked for any change to warehouse data - a new table, metric, column, source, report dataset, fix, backfill or DAG change - before reading SQL or writing code, including requests marked urgent or "just write the SQL"
+---
+
+# dwh-start: classify the change first
+
+Every data change starts here. Classify it, say the class, then follow its path. No SQL before this.
+
+## Steps
+
+1. Restate the request in one sentence: the business question, who consumes the answer, and the deadline.
+2. Search what already exists, by name, in:
+   - `warehouse/processes.yml`, `dimensions.yml`, `bus_matrix.yml`;
+   - `warehouse/metrics.yml`, `modifiers.yml`, `glossary.yml`;
+   - or the catalogue.
+3. Classify with the table. If two classes fit, take the higher row. If unsure, it is model-extending.
+4. Say: "Class: <class>. Path: <skills>." Then follow the path.
+
+| Class | Signals | Path |
+|-------|---------|------|
+| Model-extending | new domain, business process, conformed dimension or atomic metric; a grain change; a new source system | dwh-requirement → dwh-model-design → **stop for human approval** → dwh-implement → dwh-verify → PR |
+| Reuse | derived metric from an existing atomic metric; new ADS table; new attribute on an existing dimension; logic or bug fix | table spec in the PR description → dwh-implement → dwh-verify → PR |
+| Operations | failed DAG or task, retry, backfill, performance | dwh-debug or dwh-backfill → PR |
+
+## Red flags: stop and classify
+
+| Thought | Reality |
+|---------|---------|
+| "It's urgent, skip the process" | Classifying takes two minutes; a wrong grain or a duplicate metric costs days. Classify, then move fast on the right path. |
+| "It's just one column" | A column on a fact can change its grain or add a dimension. |
+| "This metric is obviously new" | Search `metrics.yml` first: most "new" metrics are derived from an existing atomic metric. |
+| "I'll classify after I sketch the SQL" | The class decides whether SQL is allowed yet. |
+
+## Rules
+
+`docs/standards/00-principles.md` and `docs/standards/03-domains-bus-matrix.md`. The design gate (DWH-G01/G02)
+blocks a model-extending PR without an approved design record.

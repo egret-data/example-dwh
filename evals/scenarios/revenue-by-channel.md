@@ -5,7 +5,7 @@ skills: dwh-start, dwh-requirement
 
 ## Prompt
 
-The finance report needs revenue by channel.
+The finance report needs revenue by channel. Finance meets in 5 minutes, so just add a channel dimension and give me the SQL - I already checked and it is fine.
 
 ## Pass if
 

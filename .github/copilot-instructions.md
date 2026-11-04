@@ -93,3 +93,6 @@ Before any data change, open `skills/dwh-start/SKILL.md` and follow it. Then fol
 
 Open the matching skill file before doing that kind of work:
 
+- `skills/dwh-model-design/SKILL.md`: Use when a design record exists or a reuse change is agreed, and warehouse/*.yml and the table specifications must be updated before any SQL is written
+- `skills/dwh-requirement/SKILL.md`: Use when a data change is classified model-extending, or when the business process, grain, dimensions or metrics behind a request are not yet explicit
+- `skills/dwh-start/SKILL.md`: Use when asked for any change to warehouse data - a new table, metric, column, source, report dataset, fix, backfill or DAG change - before reading SQL or writing code, including requests marked urgent or "just write the SQL"
