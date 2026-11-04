@@ -10,8 +10,9 @@ description: Use when a design is approved or a reuse change is agreed, and dbt 
 
 1. **Scaffold.** Run
    `uv run --project tools/dwh dwh scaffold <model> --from <upstream> --grain <columns> [--metric <name>] --write`.
-   It writes the `.sql` and the `.yml` with contract, grain and relationships tests. For an SCD4 dimension it also
-   writes the `_hist` snapshot.
+   A transaction DWD also takes `--event-at <column>` (`05-facts.md` STD-05-08); an accumulating snapshot is
+   written by hand. Scaffold writes the `.sql` and the `.yml` with contract, grain and relationships tests and the
+   selection tag. For an SCD4 dimension it also writes the `_hist` snapshot.
 2. **Complete the YAML.** Fill every description, check each `data_type`, and list every column the SQL selects
    (DWH-D02 cannot see unlisted columns).
 3. **Unit tests for logic.** Add dbt unit tests for non-trivial logic in `_<folder>__unit_tests.yml`: day windows,
@@ -21,7 +22,8 @@ description: Use when a design is approved or a reuse change is agreed, and dbt 
    - Use `get_dt()`, `in_business_day()` and `source_ts()`, never `{{ ds }}`.
    - Use CTEs, filter `dt` early, join on durable keys.
 5. **Orchestration** (`11-airflow.md`): a new source gets a `dbt_ods_<source>` DAG; a new domain gets a
-   `dbt_<domain>` DAG.
+   `dbt_<domain>` DAG. Every model, `dim_pub_*` and `_hist` snapshots included, must be selected by one DAG
+   (STD-11-08).
 6. **Lint.** Run `make sql-lint` and `make dwh-lint` until both are clean, then go to `dwh-verify`.
 
 ## Red flags

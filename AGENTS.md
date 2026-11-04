@@ -70,7 +70,7 @@ Before any data change, open `skills/dwh-start/SKILL.md` and follow it. Then fol
 | `make dwh-lint` | build the dbt manifest on the host and lint the project (DWH-Y, N, L, M, B, T, D, S) |
 | `make sql-lint` | sqlfluff on dbt models |
 | `make check-standards` | check the rulebook format and its lint-code citations (DWH-R) |
-| `uv run --project tools/dwh dwh scaffold <model> --from ... --grain ... [--metric ...]` | print a new model's files; add `--write` to create them |
+| `uv run --project tools/dwh dwh scaffold <model> --from ... --grain ... [--event-at ...] [--metric ...]` | print a new model's files; add `--write` to create them |
 | `make dev-up`, `make test-dags`, `make test-integration`, `make e2e` | local stack and its tests |
 | `make catalog` | render the design catalogue into `site/` |
 | `make sync-agents` | regenerate the per-tool AI files after editing `AGENTS.md` or `skills/` |

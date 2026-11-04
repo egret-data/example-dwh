@@ -22,7 +22,7 @@ Every data change starts here. Classify it, say the class, then follow its path.
 | Class | Signals | Path |
 |-------|---------|------|
 | Model-extending | new domain, business process, conformed dimension or atomic metric; a grain change; a new source system | dwh-requirement → dwh-model-design → **stop for human approval** → dwh-implement → dwh-verify → PR |
-| Reuse | derived metric from an existing atomic metric; new ADS table; new attribute on an existing dimension; logic or bug fix | table spec in the PR description → dwh-implement → dwh-verify → PR |
+| Reuse | derived metric from an existing atomic metric; new ADS table; new attribute on an existing dimension; logic or bug fix | dwh-model-design (update warehouse YAML, no approval stop) → dwh-implement → dwh-verify → PR |
 | Operations | failed DAG or task, retry, backfill, performance | dwh-debug or dwh-backfill → PR |
 
 ## Red flags: stop and classify

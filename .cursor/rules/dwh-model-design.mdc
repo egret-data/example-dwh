@@ -24,14 +24,16 @@ alwaysApply: false
    - load (partition replacement or merge);
    - history (an SCD4 `_hist` snapshot);
    - partition `dt`.
-4. **Dry-run each name.** Run `uv run --project tools/dwh dwh scaffold <model> --from ... --grain ... [--metric ...]`
+4. **Dry-run each name.** Run
+   `uv run --project tools/dwh dwh scaffold <model> --from ... --grain ... [--event-at ...] [--metric ...]`
    without `--write`. A naming or design error shows up here.
 5. **Model-extending change: STOP.**
    1. Commit the design record and the YAML on a branch.
    2. Open a PR that links `docs/designs/<record>.md`.
    3. Ask a data architect to review it and add the `design-approved` label.
    4. Write no SQL until the label is on the PR.
-6. **Reuse change:** put the table specification in the PR description and continue with `dwh-implement`.
+6. **Reuse change: no approval stop.** Put the table specification in the PR description and continue with
+   `dwh-implement`.
 
 ## Red flags
 
