@@ -41,7 +41,8 @@ def check_gate(added: list[str], *, body: str, labels: list[str], repo_root: Pat
             Finding(
                 "warehouse/",
                 "DWH-G02",
-                f"adds {what}: the PR description must link an existing docs/designs/*.md",
+                f"adds {what}: the PR description must link an existing design record by repo-relative path, "
+                "e.g. docs/designs/<record>.md (a GitHub URL is not accepted)",
             )
         )
     return findings

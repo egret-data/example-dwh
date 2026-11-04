@@ -91,6 +91,8 @@ def test_gate_requires_a_link_to_an_existing_design_record(tmp_path):
     )
 
     assert [f.code for f in findings] == ["DWH-G02"]
+    assert "repo-relative path" in findings[0].message
+    assert "docs/designs/<record>.md" in findings[0].message
 
 
 def test_gate_is_silent_without_additions(tmp_path):
