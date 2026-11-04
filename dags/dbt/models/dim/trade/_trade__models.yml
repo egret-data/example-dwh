@@ -1,0 +1,29 @@
+version: 2
+models:
+- name: dim_trade_shop
+  description: Current shop, one row per shop_id, plus the Unknown and Not applicable members. No history (SCD1).
+  config:
+    contract:
+      enforced: true
+    tags:
+    - domain:trade
+  columns:
+  - name: shop_key
+    description: Durable surrogate key, a hash of shop_id; '-1' is Unknown and '-2' is Not applicable.
+    data_type: varchar
+    data_tests:
+    - unique
+    - not_null
+  - name: shop_id
+    description: Shop id from the shop source; null for the special members.
+    data_type: bigint
+    data_tests:
+    - not_null:
+        config:
+          where: shop_key not in ('-1', '-2')
+  - name: shop_name
+    description: Current shop name.
+    data_type: varchar
+  - name: city
+    description: Current city of the shop.
+    data_type: varchar
