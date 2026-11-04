@@ -94,14 +94,15 @@ Source: Spec §4
 
 A DAG that depends on another schedules on the Airflow Assets that Cosmos emits for the models it reads. It does
 not poll with a sensor. Asset URIs contain the schema of the environment (`<target.schema>_ods` in dev, `ods` in
-prod), so the same code is correct in each environment and a dev run never triggers prod.
+prod), so the same code is correct in each environment and a dev run never triggers prod. Prod uses `ods` where the
+example has `dev_ods`. That an event on an asset no DAG consumed yet triggers a consumer is unmeasured (plan 4).
 
 Correct:
 
 ```python
 from airflow.sdk import Asset
 
-orders = Asset("<uri Cosmos emits for ods_shop_orders_di>")  # look it up in the Airflow Assets view
+orders = Asset("trino://trino:8080/iceberg/dev_ods/ods_shop_orders_di")
 schedule = [orders]
 ```
 

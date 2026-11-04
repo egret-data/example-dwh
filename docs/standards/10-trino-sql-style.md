@@ -26,8 +26,11 @@ from {{ ref('ods_shop_orders_di') }}
 Incorrect:
 
 ```sql
-SELECT order_id, customer_id,   -- uppercase keywords, several columns on one line
-    cast(total_amount as decimal(18, 2)) as total_amount, date '{{ get_dt() }}' as dt
+SELECT   -- uppercase keywords
+    order_id,
+    customer_id,
+    cast(total_amount as decimal(18, 2)) as total_amount,
+    date '{{ get_dt() }}'                as dt
 FROM {{ ref('ods_shop_orders_di') }}
 ```
 
@@ -99,8 +102,8 @@ Source: Spec §7
 ### STD-10-04 Filter partitions early (MUST)
 
 Filter on `dt` in the CTE that reads a partitioned table, so Iceberg prunes partitions before any join or
-aggregation. A filter after the join still works but reads every partition first. Dimension reads follow their own
-shape (file 04).
+aggregation. Trino may push a later filter down to the scan, but then pruning depends on the optimizer, and the filter
+sits far from the read it protects. Dimension reads follow their own shape (file 04).
 
 Correct:
 
@@ -120,7 +123,7 @@ Incorrect:
 ```sql
 with orders as (
     select order_id, customer_id, total_amount, dt
-    from {{ ref('ods_shop_orders_di') }}   -- reads every partition
+    from {{ ref('ods_shop_orders_di') }}   -- no dt filter next to the read; pruning depends on the optimizer
 )
 
 select order_id, customer_id, total_amount
@@ -143,7 +146,7 @@ select
     o.order_id,
     c.customer_key
 from orders as o
-left join dim_customer as c
+left join dim_pub_customer as c
     on c.customer_id = o.customer_id
 ```
 
@@ -164,7 +167,7 @@ Source: Kimball (grain) · Spec §7
 
 `approx_distinct`, `approx_percentile` and other approximate functions appear only in ADS. A DWS metric is
 re-aggregated and compared in reconciliation (STD-12-03), and an approximate value breaks both. An ADS may trade
-exactness for speed because nothing builds on it.
+exactness for speed because nothing builds on it. An ADS reads a DWS, or sets `config.meta.dwd_reason` (STD-01-04).
 
 Correct:
 
@@ -172,8 +175,8 @@ Correct:
 -- ads_finance_customer_active_1d
 select
     dt,
-    approx_distinct(customer_id) as active_customer_cnt_1d
-from {{ ref('dwd_trade_order_di') }}
+    approx_distinct(customer_key) as active_customer_cnt_1d
+from {{ ref('dws_trade_customer_1d') }}
 group by dt
 ```
 
@@ -182,10 +185,11 @@ Incorrect:
 ```sql
 -- dws_trade_customer_1d
 select
-    dt,
-    approx_distinct(customer_id) as active_customer_cnt_1d   -- approximate value in a DWS
+    customer_key,
+    approx_distinct(order_id) as order_cnt_1d,   -- approximate value in a DWS
+    dt
 from {{ ref('dwd_trade_order_di') }}
-group by dt
+group by customer_key, dt
 ```
 
 Source: Spec §7

@@ -63,8 +63,9 @@ Source: Spec §4
 Select source timestamps with `source_ts(column, tz)`, which reads the naive value in the source's timezone and
 returns `timestamp(6) with time zone`. Filter a `di` source with `in_business_day(column, tz)`. It compares the raw
 source column with bounds converted to the source timezone, so Trino pushes the predicate down to the source
-database. The window is exact only for source zones without daylight saving time, because the day is the business
-day plus 24 hours. The zone comes from `source_timezone()`, which reads `config.meta.timezone` of the source.
+database. The raw naive column is compared with constants converted to the source zone. In a source zone with
+daylight saving time, the skipped or repeated local hour at a transition is assigned to the wrong day, so use the
+macros only for zones without it. Asia/Ho_Chi_Minh has none. The zone comes from `source_timezone()`, which reads `config.meta.timezone` of the source.
 
 Correct:
 
@@ -204,7 +205,8 @@ Checked by: DWH-S01, DWH-S02
 
 A fact can reach the warehouse after its `dt` was loaded. Rebuild the affected dts (skill `dwh-backfill`) instead of
 patching rows. A `di` source whose watermark can lag, for example a source that commits rows with an older
-`updated_at`, loads with a lookback window, and the window is written in the source's `.yml` description. The
+`updated_at`, loads with a lookback window, and the window is written in the source's `.yml`. Each run rebuilds one dt, so late
+data is handled by re-running the affected dts. The
 inferred-member case for dimensions is STD-04-07.
 
 Correct:
@@ -215,8 +217,8 @@ sources:
     tables:
       - name: payments
         description: >
-          One row per payment. Rows can commit up to 2 days after updated_at; the ODS model reads a 2-day
-          lookback and replaces every dt it touches.
+          One row per payment. Rows can commit up to 2 days after updated_at. Each run rebuilds one dt; late
+          rows are picked up by re-running the affected dts (skill dwh-backfill).
 ```
 
 Incorrect:
@@ -234,8 +236,9 @@ Source: Kimball (late-arriving facts) · Spec §7
 ### STD-08-08 Retention (MUST)
 
 Each layer keeps its default retention: ODS 400 days, DWD 3 years, DIM and its `_hist` tables forever, DWS 3 years,
-ADS 400 days. A model overrides the default with `config.meta.retention_days`. The maintenance DAG deletes older `dt`
-partitions and runs the Iceberg cleanup of STD-08-09.
+ADS 400 days. A model overrides the default with `config.meta.retention_days`. The rule applies now; the maintenance
+DAG that deletes older `dt` partitions, reads `retention_days` and runs the Iceberg cleanup of STD-08-09 arrives with
+plan 4.
 
 Correct:
 
@@ -261,7 +264,8 @@ Source: Alibaba dim-layer · Spec §4
 
 Compact small files, expire snapshots and remove orphan files on a schedule. Deleting partitions or rows frees no
 storage until snapshots expire. Many small files slow every query, so file count and size belong in the performance
-baseline (STD-12-05). Use the Trino table procedures.
+baseline (STD-12-05). Use the Trino table procedures. The scheduled job arrives with plan 4, together with the
+retention DAG of STD-08-08; until then run them by hand.
 
 Correct:
 

@@ -47,10 +47,13 @@ Correct:
 ```yaml
 models:
   - name: ods_shop_orders_di
+    description: "Daily increment of shop.orders. Grain: one row per order per dt."
     columns:
       - name: order_id
+        description: Order id from the source.
         data_tests: [not_null]
       - name: dt
+        description: Partition date.
         data_tests: [not_null]
     data_tests:
       - dbt_utils.unique_combination_of_columns:
@@ -63,10 +66,13 @@ Incorrect:
 ```yaml
 models:
   - name: ods_shop_orders_di
+    description: "Daily increment of shop.orders. Grain: one row per order per dt."
     columns:
       - name: order_id
+        description: Order id from the source.
         data_tests: [not_null]
       - name: dt            # grain column without not_null
+        description: Partition date.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -87,12 +93,15 @@ Correct:
 ```yaml
 models:
   - name: dwd_trade_order_di
+    description: One row per order per dt.
     config:
       contract: {enforced: true}
     columns:
       - name: order_key
+        description: Surrogate key of the order.
         data_type: varchar
       - name: dt
+        description: Partition date.
         data_type: date
 ```
 
@@ -101,10 +110,13 @@ Incorrect:
 ```yaml
 models:
   - name: dwd_trade_order_di   # no contract: a column type can change without a failure
+    description: One row per order per dt.
     columns:
       - name: order_key
+        description: Surrogate key of the order.
         data_type: varchar
       - name: dt
+        description: Partition date.
         data_type: date
 ```
 
@@ -209,13 +221,14 @@ Source: Spec §11
 ### STD-09-07 Start from the scaffold (SHOULD)
 
 Create a model with `dwh scaffold`, so its name, contract, tests and tags start correct and lint-clean. The command
-reads the design in `warehouse/` and never overwrites an existing file. Edit the result; do not write the first draft by
+reads the design in `warehouse/` and never overwrites an existing file. A DWD needs `--grain`, and its process must
+already be in `warehouse/processes.yml` with a row in `warehouse/bus_matrix.yml`; scaffold stops otherwise. Edit the result; do not write the first draft by
 hand.
 
 Correct:
 
 ```bash
-uv run --locked --project tools/dwh dwh scaffold dwd_trade_order_di --from ods_shop_orders_di --write
+uv run --locked --project tools/dwh dwh scaffold dwd_trade_order_di --from ods_shop_orders_di --grain order_id --write
 ```
 
 Incorrect:

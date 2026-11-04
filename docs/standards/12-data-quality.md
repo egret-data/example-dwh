@@ -23,7 +23,7 @@ Correct:
 ```yaml
 columns:
   - name: city
-    description: City of the default address. Known gaps are tracked in DWH-142.
+    description: City of the default address. Known gaps are tracked in TICKET-142.
     data_tests:
       - not_null:
           config:
@@ -81,7 +81,8 @@ Source: Spec §7
 ### STD-12-03 Reconciliation (MUST)
 
 For each changed dt, compare ODS and DWD row counts and one amount, and compare DWD and DWS totals. The numbers
-match, or the difference is explained by a documented filter. Record the numbers in the change description. Exact
+match, or the difference is explained by a documented filter. Dev schemas are `<target schema>_<layer>` (for example
+`dev_ods`); prod uses the layer name, as in the example. Record the numbers in the change description. Exact
 functions only: approximate ones are for ADS (STD-10-06).
 
 Correct:
@@ -131,7 +132,8 @@ Source: Kimball (late-arriving dimensions) · Spec §7
 ### STD-12-05 Performance baseline (MUST)
 
 For every change to an existing model, record before and after: wall time, input rows and bytes, output rows, and
-the Iceberg file count and size. Take the "before" numbers on the unchanged model, and compare after the change. A
+the Iceberg file count and size. Dev schemas are `<target schema>_<layer>` (for example `dev_ods`); prod uses the
+layer name. Take the "before" numbers on the unchanged model, and compare after the change. A
 new model records its first numbers as the baseline.
 
 Correct:
