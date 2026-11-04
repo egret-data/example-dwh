@@ -103,3 +103,23 @@ def test_cli_lint_unreadable_manifest_exits_2(make_warehouse, tmp_path, capsys, 
 
     assert rc == 2
     assert "not a readable dbt manifest" in capsys.readouterr().err
+
+
+def test_cli_lint_prefixes_paths_with_project_dir(make_warehouse, write_manifest, capsys):
+    builder, ids = good_project()
+    builder.node(ids["dwd_order"])["description"] = ""
+
+    rc = main(
+        [
+            "lint",
+            "--warehouse",
+            str(make_warehouse()),
+            "--manifest",
+            str(write_manifest(builder)),
+            "--project-dir",
+            "dags/dbt",
+        ]
+    )
+
+    assert rc == 1
+    assert "dags/dbt/models/dwd/trade/dwd_trade_order_di.sql: DWH-D01" in capsys.readouterr().out

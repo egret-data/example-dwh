@@ -53,8 +53,8 @@ dwh-test:
 validate:
 	$(DWH) validate --warehouse warehouse
 
-# dbt on the host (no Docker, no Trino): same dbt versions as the image via requirements-dbt.txt.
-HOST_DBT := uvx --python 3.12 --from dbt-core --with-requirements requirements-dbt.txt dbt
+# dbt on the host (no Docker, no Trino): the image's exact versions via requirements-dbt.lock.
+HOST_DBT := uvx --python 3.12 --from dbt-core --with-requirements requirements-dbt.lock dbt
 HOST_DBT_ENV := DBT_PROFILES_DIR=dags/dbt DBT_PACKAGES_INSTALL_PATH=$(CURDIR)/.dbt/packages \
 	DBT_TARGET_PATH=$(CURDIR)/.dbt/target DBT_LOG_PATH=$(CURDIR)/.dbt/logs DBT_SEND_ANONYMOUS_USAGE_STATS=false
 
@@ -63,7 +63,7 @@ manifest:
 	$(HOST_DBT_ENV) $(HOST_DBT) parse --project-dir dags/dbt
 
 dwh-lint: manifest
-	$(DWH) lint --warehouse warehouse --manifest .dbt/target/manifest.json
+	$(DWH) lint --warehouse warehouse --manifest .dbt/target/manifest.json --project-dir dags/dbt
 
 catalog: manifest
 	$(HOST_DBT_ENV) $(HOST_DBT) docs generate --project-dir dags/dbt --no-compile --empty-catalog --static

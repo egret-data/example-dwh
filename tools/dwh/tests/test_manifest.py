@@ -60,3 +60,14 @@ def test_node_outside_a_layer_folder_has_no_layer(write_manifest):
     project = load_manifest(write_manifest(builder))
 
     assert project.nodes[uid].layer is None
+
+
+def test_project_dir_is_joined_onto_paths_and_layers_still_resolve(write_manifest):
+    builder, ids = good_project()
+
+    project = load_manifest(write_manifest(builder), "dags/dbt")
+
+    node = project.nodes[ids["ods_orders"]]
+    assert node.path == "dags/dbt/models/ods/shop/ods_shop_orders_di.sql"
+    assert (node.layer, node.folder) == ("ods", "shop")
+    assert project.sources[ids["orders"]].path.startswith("dags/dbt/")

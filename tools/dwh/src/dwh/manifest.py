@@ -27,13 +27,19 @@ class Node:
     columns: dict[str, Column]
     depends_on: tuple[str, ...]
     contract_enforced: bool
+    project_dir: str = ""  # prefix already joined onto `path`, so findings point at the repo-relative file
+
+    @property
+    def project_path(self) -> str:
+        """`path` relative to the dbt project, which is where models/<layer>/... starts."""
+        return self.path.removeprefix(self.project_dir + "/") if self.project_dir else self.path
 
     @property
     def layer(self) -> str | None:
         """models/<layer>/...; snapshots are DIM history tables (spec D11)."""
         if self.resource_type == "snapshot":
             return "dim"
-        parts = PurePosixPath(self.path).parts
+        parts = PurePosixPath(self.project_path).parts
         if len(parts) >= 3 and parts[0] == "models" and parts[1] in LAYERS:
             return parts[1]
         return None
@@ -41,7 +47,7 @@ class Node:
     @property
     def folder(self) -> str | None:
         """The folder under the layer: models/<layer>/<folder>/<file>."""
-        parts = PurePosixPath(self.path).parts
+        parts = PurePosixPath(self.project_path).parts
         return parts[2] if len(parts) >= 4 and parts[0] == "models" else None
 
 
@@ -84,7 +90,12 @@ class Project:
         return [t for t in self.tests if t.attached_node == unique_id]
 
 
-def load_manifest(path: Path) -> Project:
+def load_manifest(path: Path, project_dir: str = "") -> Project:
+    """`project_dir` (e.g. dags/dbt) is joined onto every file path so findings are repo-relative."""
+
+    def in_repo(original_file_path: str) -> str:
+        return str(PurePosixPath(project_dir, original_file_path)) if project_dir else original_file_path
+
     manifest = json.loads(Path(path).read_text())
     project = manifest["metadata"]["project_name"]
     nodes: dict[str, Node] = {}
@@ -98,7 +109,7 @@ def load_manifest(path: Path) -> Project:
                 unique_id=uid,
                 name=raw["name"],
                 resource_type=kind,
-                path=raw["original_file_path"],
+                path=in_repo(raw["original_file_path"]),
                 description=raw.get("description") or "",
                 meta=raw.get("meta") or {},
                 columns={
@@ -107,6 +118,7 @@ def load_manifest(path: Path) -> Project:
                 },
                 depends_on=tuple((raw.get("depends_on") or {}).get("nodes") or []),
                 contract_enforced=bool((raw.get("contract") or {}).get("enforced")),
+                project_dir=project_dir.strip("/"),
             )
         elif kind == "test" and raw.get("test_metadata"):
             meta = raw["test_metadata"]
@@ -128,7 +140,7 @@ def load_manifest(path: Path) -> Project:
             name=raw["name"],
             description=raw.get("description") or "",
             meta=raw.get("meta") or {},
-            path=raw["original_file_path"],
+            path=in_repo(raw["original_file_path"]),
         )
         for uid, raw in manifest["sources"].items()
         if raw.get("package_name") == project
