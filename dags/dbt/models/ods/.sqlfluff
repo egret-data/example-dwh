@@ -1,0 +1,3 @@
+# ODS mirrors source tables; select * is allowed here (spec §7, 10-trino-sql-style).
+[sqlfluff]
+exclude_rules = AM04
