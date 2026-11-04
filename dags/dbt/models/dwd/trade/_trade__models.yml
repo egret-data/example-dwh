@@ -1,0 +1,197 @@
+version: 2
+models:
+  - name: dwd_trade_order_di
+    description: Order event fact, one row per order on the Asia/Ho_Chi_Minh day it was placed. The state is the earliest ODS version, with the customer's city as of the order time.
+    config:
+      contract:
+        enforced: true
+      meta:
+        process: order
+      tags:
+        - domain:trade
+    columns:
+      - name: order_id
+        description: Order id from the shop source (the grain).
+        data_type: bigint
+        data_tests:
+          - not_null
+      - name: order_date_key
+        description: Date key of the day the order was placed (order_date role).
+        data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_pub_date')
+                field: date_key
+      - name: customer_key
+        description: Durable key of the customer who placed the order.
+        data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_pub_customer')
+                field: customer_key
+      - name: shop_key
+        description: Durable key of the shop the order was placed in.
+        data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_trade_shop')
+                field: shop_key
+      - name: channel
+        description: Channel the order was placed through, app or web.
+        data_type: varchar
+      - name: order_status
+        description: Order status at the end of the placed day.
+        data_type: varchar
+      - name: order_amt
+        description: Order total amount in VND.
+        data_type: decimal(18,2)
+      - name: customer_city
+        description: City the customer had when ordering (point-in-time, STD-05-05); Unknown when the customer has no history.
+        data_type: varchar
+      - name: created_at
+        description: When the order was placed.
+        data_type: timestamp(6) with time zone
+      - name: dt
+        description: Asia/Ho_Chi_Minh day the order was placed.
+        data_type: date
+        data_tests:
+          - not_null
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - order_id
+              - dt
+  - name: dwd_trade_payment_di
+    description: Payment event fact, one row per payment on the Asia/Ho_Chi_Minh day it was captured.
+    config:
+      contract:
+        enforced: true
+      meta:
+        process: payment
+      tags:
+        - domain:trade
+    columns:
+      - name: payment_id
+        description: Payment id from the shop source (the grain).
+        data_type: varchar
+        data_tests:
+          - not_null
+      - name: order_id
+        description: Order the payment is for (degenerate dimension).
+        data_type: bigint
+      - name: pay_date_key
+        description: Date key of the day the payment was captured (pay_date role).
+        data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_pub_date')
+                field: date_key
+      - name: customer_key
+        description: Durable key of the paying customer.
+        data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_pub_customer')
+                field: customer_key
+      - name: shop_key
+        description: Durable key of the shop that received the payment.
+        data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_trade_shop')
+                field: shop_key
+      - name: pay_amt
+        description: Payment amount in VND.
+        data_type: decimal(18,2)
+      - name: method
+        description: Payment method, for example card, cash or wallet.
+        data_type: varchar
+      - name: paid_at
+        description: When the payment was captured.
+        data_type: timestamp(6) with time zone
+      - name: dt
+        description: Asia/Ho_Chi_Minh day the payment was captured.
+        data_type: date
+        data_tests:
+          - not_null
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - payment_id
+              - dt
+  - name: dwd_trade_order_lifecycle_di
+    description: Order lifecycle accumulating snapshot, one row per order, merged on order_id when the order is placed and again when it is paid. The dt is the day the order was placed.
+    config:
+      contract:
+        enforced: true
+      meta:
+        process: order_lifecycle
+      tags:
+        - domain:trade
+    columns:
+      - name: order_id
+        description: Order id from the shop source (the grain).
+        data_type: bigint
+        data_tests:
+          - unique
+          - not_null
+      - name: order_date_key
+        description: Date key of the day the order was placed (order_date role).
+        data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_pub_date')
+                field: date_key
+      - name: pay_date_key
+        description: Date key of the first payment day (pay_date role); '-2' Not applicable while the order is unpaid.
+        data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_pub_date')
+                field: date_key
+      - name: customer_key
+        description: Durable key of the customer who placed the order.
+        data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_pub_customer')
+                field: customer_key
+      - name: shop_key
+        description: Durable key of the shop the order was placed in.
+        data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_trade_shop')
+                field: shop_key
+      - name: order_amt
+        description: Order total amount in VND.
+        data_type: decimal(18,2)
+      - name: pay_amt
+        description: Sum of the payments received for the order so far; null while unpaid.
+        data_type: decimal(18,2)
+      - name: created_at
+        description: When the order was placed.
+        data_type: timestamp(6) with time zone
+      - name: paid_at
+        description: When the first payment was captured; null while unpaid.
+        data_type: timestamp(6) with time zone
+      - name: is_paid
+        description: True once the order has received a payment.
+        data_type: boolean
+      - name: dt
+        description: Asia/Ho_Chi_Minh day the order was placed (partition of the row).
+        data_type: date
+        data_tests:
+          - not_null

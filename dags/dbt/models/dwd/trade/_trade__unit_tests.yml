@@ -1,0 +1,35 @@
+version: 2
+# The merge itself is covered by test_capabilities; this test pins the SELECT a later-day payment produces: the order
+# keeps its placed-day dt, so the merge on order_id updates the existing row in its original partition.
+unit_tests:
+  - name: lifecycle_payment_on_a_later_day_updates_the_existing_row
+    model: dwd_trade_order_lifecycle_di
+    overrides:
+      vars:
+        dt: '2026-11-02'
+      macros:
+        is_incremental: true
+    given:
+      - input: ref('dwd_trade_order_di')
+        rows:
+          - order_id: 2
+            order_date_key: d1
+            customer_key: c1
+            shop_key: s1
+            order_amt: 80000
+            created_at: '2026-11-01 11:00:00 +07:00'
+            dt: '2026-11-01'
+      - input: ref('dwd_trade_payment_di')
+        rows:
+          - payment_id: p4
+            order_id: 2
+            pay_amt: 80000
+            paid_at: '2026-11-02 08:00:00 +07:00'
+            dt: '2026-11-02'
+    expect:
+      rows:
+        - order_id: 2
+          customer_key: c1
+          pay_amt: 80000
+          is_paid: true
+          dt: '2026-11-01'
