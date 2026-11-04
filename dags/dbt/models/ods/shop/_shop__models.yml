@@ -7,6 +7,10 @@ models:
       - name: order_id
         description: Order id from the source.
         data_tests: [not_null]
+      - name: shop_id
+        description: Shop that took the order, from the source.
+      - name: channel
+        description: Sales channel of the order (app or web), from the source.
       - name: dt
         description: Partition date (the day the row changed).
         data_tests: [not_null]
@@ -28,3 +32,31 @@ models:
       - dbt_utils.unique_combination_of_columns:
           arguments:
             combination_of_columns: [customer_id, dt]
+
+  - name: ods_shop_shops_df
+    description: "Daily full copy of shop.shops. Grain: one row per shop per dt."
+    columns:
+      - name: shop_id
+        description: Shop id from the source.
+        data_tests: [not_null]
+      - name: dt
+        description: Partition date (snapshot day).
+        data_tests: [not_null]
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [shop_id, dt]
+
+  - name: ods_shop_payments_di
+    description: "Daily increment of shop.payments: rows whose updated_at falls on dt. Grain: one row per payment per dt."
+    columns:
+      - name: payment_id
+        description: Payment id from the source.
+        data_tests: [not_null]
+      - name: dt
+        description: Partition date (the day the payment was recorded).
+        data_tests: [not_null]
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [payment_id, dt]

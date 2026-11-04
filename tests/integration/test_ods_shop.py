@@ -4,6 +4,7 @@ Tests run in file order and share state: each builds on the previous load.
 """
 
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import pytest
@@ -73,16 +74,37 @@ def test_next_dt_adds_partition_and_keeps_previous():
     assert dts == [(date(2026, 11, 2),), (date(2026, 11, 3),)]
 
 
+def test_shops_and_payments_load():
+    build("2026-11-02")
+
+    assert count("ods_shop_shops_df", "2026-11-02") == 2
+    assert count("ods_shop_payments_di", "2026-11-02") == 2  # p4 (08:00) and p2 (14:05)
+    assert query(f"SELECT sum(amount) FROM {ODS}.ods_shop_payments_di WHERE dt = DATE '2026-11-02'") == [
+        (Decimal("330000.00"),)
+    ]
+
+
+def test_orders_carry_shop_and_channel():
+    rows = query(
+        f"SELECT order_id, shop_id, channel FROM {ODS}.ods_shop_orders_di WHERE dt = DATE '2026-11-02' ORDER BY 1"
+    )
+    assert rows == [(2, 1, "web"), (3, 2, "app")]
+
+
 def test_rerun_with_empty_batch_clears_the_dt_partition():
     # The source stops yielding rows for 2026-11-02 (rows deleted), then the dt is re-run.
+    # Payments reference their orders, so they are deleted first.
     # The shared `shop` fixture is restored in `finally`.
-    columns = "order_id, customer_id, order_status, total_amount, created_at, updated_at"
+    columns = "order_id, customer_id, shop_id, channel, order_status, total_amount, created_at, updated_at"
+    pay_columns = "payment_id, order_id, customer_id, shop_id, amount, method, paid_at, updated_at"
     rows = query(
         f"SELECT {columns} FROM shop.public.orders "
         "WHERE updated_at >= TIMESTAMP '2026-11-02 00:00:00' AND updated_at < TIMESTAMP '2026-11-03 00:00:00'"
     )
     assert len(rows) == 2
     ids = ", ".join(str(row[0]) for row in rows)
+    payments = query(f"SELECT {pay_columns} FROM shop.public.payments WHERE order_id IN ({ids})")
+    query(f"DELETE FROM shop.public.payments WHERE order_id IN ({ids})")
     query(f"DELETE FROM shop.public.orders WHERE order_id IN ({ids})")
     try:
         build("2026-11-02")
@@ -91,10 +113,17 @@ def test_rerun_with_empty_batch_clears_the_dt_partition():
         assert count("ods_shop_orders_di", "2026-11-03") == 3
     finally:
         values = ", ".join(
-            f"({oid}, {cid}, '{status}', DECIMAL '{amount}', TIMESTAMP '{created}', TIMESTAMP '{updated}')"
-            for oid, cid, status, amount, created, updated in rows
+            f"({oid}, {cid}, {sid}, '{channel}', '{status}', DECIMAL '{amount}', "
+            f"TIMESTAMP '{created}', TIMESTAMP '{updated}')"
+            for oid, cid, sid, channel, status, amount, created, updated in rows
         )
         query(f"INSERT INTO shop.public.orders ({columns}) VALUES {values}")
+        pay_values = ", ".join(
+            f"('{pid}', {oid}, {cid}, {sid}, DECIMAL '{amount}', '{method}', "
+            f"TIMESTAMP '{paid}', TIMESTAMP '{updated}')"
+            for pid, oid, cid, sid, amount, method, paid, updated in payments
+        )
+        query(f"INSERT INTO shop.public.payments ({pay_columns}) VALUES {pay_values}")
 
 
 def test_orders_window_is_pushed_down_to_the_source():

@@ -16,6 +16,8 @@
 select
     cast(order_id as bigint)             as order_id,
     cast(customer_id as bigint)          as customer_id,
+    cast(shop_id as bigint)              as shop_id,
+    cast(channel as varchar)             as channel,
     cast(order_status as varchar)        as order_status,
     cast(total_amount as decimal(18, 2)) as total_amount,
     {{ source_ts('created_at', tz) }}    as created_at,
