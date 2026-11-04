@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM apache/airflow:3.3.2-python3.12 AS base
+FROM apache/airflow:3.3.2-python3.12 AS runtime
 
 USER root
 RUN python -m venv /opt/dbt-venv \
@@ -7,13 +7,21 @@ RUN python -m venv /opt/dbt-venv \
     && chown -R airflow: /opt/dbt-venv /opt/dbt_packages /tmp/dbt
 USER airflow
 
-# Airflow side: pinning apache-airflow stops pip from up/downgrading the base install.
-COPY --chown=airflow requirements.txt /tmp/requirements.txt
-RUN pip install --no-cache-dir -r /tmp/requirements.txt
+# `make lock` only: resolve the direct requirements (Airflow side under Airflow's official
+# constraints) and freeze the result into requirements*.lock. Never used by the real image.
+FROM runtime AS resolve
+COPY --chown=airflow requirements.txt requirements-dbt.txt /tmp/
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+      -c https://raw.githubusercontent.com/apache/airflow/constraints-3.3.2/constraints-3.12.txt \
+    && /opt/dbt-venv/bin/pip install --no-cache-dir -r /tmp/requirements-dbt.txt
 
-# dbt side: separate venv so dbt and Airflow never share dependency pins.
-COPY --chown=airflow requirements-dbt.txt /tmp/requirements-dbt.txt
-RUN /opt/dbt-venv/bin/pip install --no-cache-dir -r /tmp/requirements-dbt.txt
+FROM runtime AS base
+# Exact, complete pins: --no-deps means nothing outside the lock files can be installed.
+COPY --chown=airflow requirements.lock requirements-dbt.lock /tmp/
+RUN pip install --no-cache-dir --no-deps -r /tmp/requirements.lock \
+    && /opt/dbt-venv/bin/pip install --no-cache-dir --no-deps -r /tmp/requirements-dbt.lock \
+    && pip check \
+    && /opt/dbt-venv/bin/pip check
 
 # DBT_SEND_ANONYMOUS_USAGE_STATS=false: no .user.yml cookie written into the read-only profiles dir.
 ENV DBT_EXECUTABLE_PATH=/opt/dbt-venv/bin/dbt \
