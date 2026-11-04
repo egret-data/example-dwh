@@ -119,6 +119,48 @@ scaffolded DWD, DWS and ADS against every `dwh lint` family. Descriptions are em
 `dwh sync-agents --check` and `dwh check-standards`. CI's `lint` job now also runs `make check-standards` and
 `make sync-agents-check`.
 
+## Final review fixes
+
+The final whole-branch review (`.superpowers/sdd/2026-11-04-plan3-rulebook-skills/final-review.md`, not committed)
+asked for one design decision and a set of consistency fixes. Applied at `c198348`:
+
+- **User decision (2026-11-04), STD-05-08:** a transaction DWD over an updated-in-place `di` source is an event fact.
+  Its `dt` is the Vietnam day of the event timestamp, a run reads every ODS partition from `dt` on, and it keeps the
+  earliest ODS version per grain key. Later changes go into an accumulating snapshot merged by key. `dwh scaffold`
+  now requires `--event-at` for a transaction DWD, writes that shape with the new `in_business_day_tz()` macro, and
+  refuses an accumulating snapshot. STD-05-05, STD-08-07, STD-12-03, `dwh-backfill`, `dwh-debug` and spec §7/§11
+  follow it.
+- **Scaffold output obeys the MUST rules:** DWD keys map a null natural key to `'-1'`; DIM unions the `'-1'` and `'-2'`
+  members; every DIM, DWD, DWS, ADS and snapshot sets its selection tag; a DIM from a `di` upstream keeps the latest
+  version per natural key.
+- **Rulebook and skills:** the Reuse path goes through `dwh-model-design`; STD-11-08 gives every model a DAG;
+  Correct examples in 01, 03, 09, 10 and 12 match the tooling; `airflow backfill create` replaces the removed
+  `airflow dags backfill`; `make sql-fix` exists; README scaffold examples run against the eval fixture and exit 0.
+- **Eval isolation:** `evals/run.sh` deletes `evals/`, `docs/en/plans/` and `docs/en/verification/` from the eval
+  worktree before the agent runs (checked with a dry run that replaces the `claude` call by `ls`).
+
+Commands, run at `c198348`:
+
+```bash
+make lint && make sql-lint && make test-repo && make dwh-test && make check-standards && make sync-agents-check \
+  && make pre-commit; echo EXIT=$?   # -> EXIT=0
+make dev-up && make test-integration; echo EXIT=$?   # -> EXIT=0
+```
+
+| Step | Result |
+|------|--------|
+| `make lint` | All checks passed; 111 files already formatted |
+| `make sql-lint` | no violations |
+| `make test-repo` | 5 passed (the scaffold sqlfluff probe now covers the event DWD and a DIM from a `di` upstream) |
+| `make dwh-test` | 197 passed |
+| `make check-standards`, `make validate` | 0 finding(s) each |
+| `make sync-agents-check` | agent files are up to date |
+| `make pre-commit` | 7 hooks Passed |
+| `make test-integration` | 11 passed (new: `test_in_business_day_tz_keeps_exactly_the_vietnam_day`) |
+
+The stack chain beyond `test-integration` (`make test-dags`, `make e2e`, `make catalog`) and the evals were not
+re-run: no DAG, model or ODS code changed.
+
 ## Known limits
 
 - Scenario grading is manual until plan 4.
@@ -131,3 +173,8 @@ scaffolded DWD, DWS and ADS against every `dwh lint` family. Descriptions are em
   plan 4; the `debug-number-mismatch` fixture has only ODS models.
 - `dwh lint --changed` scopes by folder, so a change to `warehouse/*.yml` that affects findings elsewhere is only
   caught by the full `make dwh-lint` in CI.
+- GREEN eval runs made before the final review fixes could read their own scenario rubric in `evals/scenarios/`:
+  at least `reuse-derived-metric-82c1260` did (its answer says the metric name "appears nowhere except the eval
+  scenario text"). The answers do not quote the rubric and the RED/GREEN deltas match the skill changes, so the
+  conclusions stand, but they were not measured blind. `evals/run.sh` now removes `evals/`, `docs/en/plans/` and
+  `docs/en/verification/` from the eval worktree; no re-run was made.
