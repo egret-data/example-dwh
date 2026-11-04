@@ -1,0 +1,3 @@
+# Data domains (spec §5). Each name is one token: it fills one segment of table names.
+# Adding a domain is model-extending: it needs a docs/designs/ record and the design-approved label.
+domains: []

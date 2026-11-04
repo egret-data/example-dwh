@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "warehouse/metrics.yml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["atomic", "derived", "calculated"],
+  "$defs": {
+    "snake": {"type": "string", "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$"}
+  },
+  "properties": {
+    "atomic": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "process", "description", "aggregation", "additivity"],
+        "properties": {
+          "name": {"$ref": "#/$defs/snake"},
+          "process": {"$ref": "#/$defs/snake"},
+          "description": {"type": "string", "minLength": 1},
+          "aggregation": {"enum": ["sum", "count", "count_distinct", "min", "max"]},
+          "additivity": {"enum": ["additive", "semi_additive", "non_additive"]},
+          "non_additive_dimension": {"$ref": "#/$defs/snake"}
+        },
+        "if": {"properties": {"additivity": {"const": "semi_additive"}}, "required": ["additivity"]},
+        "then": {"required": ["non_additive_dimension"]}
+      }
+    },
+    "derived": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "atomic", "period", "grain", "description"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z0-9]+(_[a-z0-9]+)*$"},
+          "atomic": {"$ref": "#/$defs/snake"},
+          "period": {"enum": ["1d", "nd", "td", "1w", "hh", "mm"]},
+          "days": {"type": "integer", "minimum": 2, "description": "Length of an nd period."},
+          "modifiers": {"type": "array", "items": {"$ref": "#/$defs/snake"}},
+          "grain": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/snake"}},
+          "description": {"type": "string", "minLength": 1}
+        },
+        "if": {"properties": {"period": {"const": "nd"}}, "required": ["period"]},
+        "then": {"required": ["days"]},
+        "else": {"not": {"required": ["days"]}}
+      }
+    },
+    "calculated": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "formula", "inputs", "description"],
+        "properties": {
+          "name": {"type": "string", "pattern": "^[a-z0-9]+(_[a-z0-9]+)*$"},
+          "formula": {"type": "string", "minLength": 1},
+          "inputs": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^[a-z0-9]+(_[a-z0-9]+)*$"}},
+          "description": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

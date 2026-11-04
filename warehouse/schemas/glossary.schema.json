@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "warehouse/glossary.yml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["words"],
+  "properties": {
+    "words": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["word", "meaning"],
+        "properties": {
+          "word": {"type": "string", "pattern": "^[a-z0-9]+$"},
+          "meaning": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

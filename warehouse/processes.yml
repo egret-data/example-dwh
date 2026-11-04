@@ -1,0 +1,3 @@
+# Business processes (spec §5). fact_type: transaction | periodic_snapshot | accumulating_snapshot.
+# grain is one sentence saying what one fact row is. Adding a process is model-extending.
+processes: []

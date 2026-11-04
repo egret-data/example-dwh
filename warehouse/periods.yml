@@ -1,0 +1,14 @@
+# Statistical periods (spec §5). One period per DWS table; batch DWS defaults to 1d / nd / td.
+periods:
+  - name: 1d
+    description: The dt day.
+  - name: nd
+    description: The last n days up to and including dt; n is fixed by each derived metric (days).
+  - name: td
+    description: All history up to and including dt.
+  - name: 1w
+    description: The last 7 days, split out of an nd table that grew too wide.
+  - name: hh
+    description: Hourly.
+  - name: mm
+    description: Minute-level.

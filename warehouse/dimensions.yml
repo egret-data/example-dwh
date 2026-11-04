@@ -1,0 +1,18 @@
+# Conformed dimensions (spec §5, D11). history: scd4 (default) | scd1 | scd2 (needs scd2_reason).
+# Attribute history: historical (resolved in DWD at event time) | current (read from dim_*).
+dimensions:
+  - name: date
+    scope: pub
+    description: Calendar day in the Asia/Ho_Chi_Minh calendar. Mandatory as dim_pub_date.
+    natural_key: [cal_date]
+    history: scd1
+    attributes:
+      - name: year
+        description: Calendar year.
+        history: current
+      - name: month
+        description: Calendar month, 1-12.
+        history: current
+      - name: weekday
+        description: ISO day of week, 1 = Monday.
+        history: current

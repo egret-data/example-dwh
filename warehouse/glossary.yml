@@ -1,0 +1,34 @@
+# Root words allowed in model and column names outside ODS (spec §7, 02-naming).
+words:
+  - {word: ods, meaning: Operational data store layer.}
+  - {word: dim, meaning: Dimension layer.}
+  - {word: dwd, meaning: Detail fact layer.}
+  - {word: dws, meaning: Summary layer.}
+  - {word: ads, meaning: Application layer.}
+  - {word: pub, meaning: Shared across domains.}
+  - {word: hist, meaning: All versions of a dimension (SCD4 history table).}
+  - {word: di, meaning: Daily incremental load.}
+  - {word: df, meaning: Daily full load.}
+  - {word: dt, meaning: "Partition date, the Asia/Ho_Chi_Minh business day."}
+  - {word: id, meaning: Natural identifier from a source.}
+  - {word: key, meaning: Surrogate or durable key.}
+  - {word: is, meaning: Boolean flag prefix.}
+  - {word: at, meaning: Timestamp suffix.}
+  - {word: amt, meaning: Money amount.}
+  - {word: cnt, meaning: Count.}
+  - {word: dcnt, meaning: Distinct count.}
+  - {word: sum, meaning: Sum aggregation.}
+  - {word: min, meaning: Minimum aggregation.}
+  - {word: max, meaning: Maximum aggregation.}
+  - {word: avg, meaning: "Average, a calculated metric."}
+  - {word: date, meaning: Calendar day.}
+  - {word: cal, meaning: Calendar.}
+  - {word: year, meaning: Calendar year.}
+  - {word: month, meaning: Calendar month.}
+  - {word: weekday, meaning: Day of week.}
+  - {word: name, meaning: Display name.}
+  - {word: inferred, meaning: Placeholder member for a late-arriving dimension row.}
+  - {word: valid, meaning: "Validity range of a history row (valid_from, valid_to)."}
+  - {word: from, meaning: Start of a range.}
+  - {word: to, meaning: End of a range.}
+  - {word: current, meaning: The current version of a dimension row (is_current).}

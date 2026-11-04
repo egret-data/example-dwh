@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "warehouse/bus_matrix.yml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["bus_matrix"],
+  "properties": {
+    "bus_matrix": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["process", "dimensions"],
+        "properties": {
+          "process": {"type": "string", "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$"},
+          "dimensions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["dimension"],
+              "properties": {
+                "dimension": {"type": "string", "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$"},
+                "role": {"type": "string", "pattern": "^[a-z][a-z0-9]*(_[a-z0-9]+)*$", "description": "Role name for a role-playing dimension, e.g. order_date."}
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
