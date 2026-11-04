@@ -2,7 +2,7 @@ COMPOSE := docker compose -f dev/compose.yml
 DWH := uv run --locked --project tools/dwh dwh
 RUN := $(COMPOSE) run --rm airflow
 
-.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards sql-lint sync-agents sync-agents-check pre-commit-install pre-commit eval
+.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards sql-lint sql-fix sync-agents sync-agents-check pre-commit-install pre-commit eval
 
 dev-up:
 	$(COMPOSE) up -d trino
@@ -20,6 +20,9 @@ lint:
 
 sql-lint:
 	uvx --python 3.12 sqlfluff==4.5.0 lint dags/dbt/models
+
+sql-fix:
+	uvx --python 3.12 sqlfluff==4.5.0 fix dags/dbt/models
 
 fmt:
 	uvx ruff@0.17.3 check --fix .

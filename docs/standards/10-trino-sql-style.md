@@ -9,8 +9,8 @@ that no tool checks are reviewed.
 ### STD-10-01 sqlfluff clean (MUST)
 
 Every model passes `make sql-lint`: lowercase keywords, aliases aligned in the select list, a line length of 110.
-Run `sqlfluff fix` through the Makefile target rather than hand-formatting. The DWS folder relaxes alias alignment
-because aggregate expressions are too wide to align.
+Run `make sql-fix`, which runs `sqlfluff fix` over the models, rather than hand-formatting. The DWS folder relaxes
+alias alignment because aggregate expressions are too wide to align.
 
 Correct:
 
@@ -136,18 +136,19 @@ Source: Alibaba data-warehouse-performance-optimization · Spec §7
 ### STD-10-05 Check join fan-out (MUST)
 
 Join on the full key of the other side, so each left row matches at most one right row. After a join, the model's
-grain test must still pass; a fan-out shows up there first. Joining a fact to a type 2 dimension needs the time
-condition of file 05, or one fact row becomes one row per version.
+grain test must still pass; a fan-out shows up there first. Join a fact to a DIM on the durable key the fact
+already carries, not on a natural id. Joining a fact to a `dim_*_hist` snapshot needs the time condition of file 05,
+or one fact row becomes one row per version.
 
 Correct:
 
 ```sql
 select
     o.order_id,
-    c.customer_key
-from orders as o
-left join dim_pub_customer as c
-    on c.customer_id = o.customer_id
+    c.city
+from {{ ref('dwd_trade_order_di') }} as o
+left join {{ ref('dim_pub_customer') }} as c
+    on c.customer_key = o.customer_key   -- the durable key: one current row per key
 ```
 
 Incorrect:
