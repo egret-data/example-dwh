@@ -26,7 +26,7 @@ make dev-up            # start Postgres, RustFS, Trino (Trino on localhost:28080
 make smoke             # Iceberg + MERGE + source catalog smoke test
 make test-dags         # DAG integrity
 make test-integration  # ODS idempotency + dbt capability checks
-make e2e               # run dbt_ods_shop in Airflow for 2026-11-03
+make e2e               # run dbt_ods_shop in Airflow for 2026-11-02
 make dev-down          # stop and delete volumes
 ```
 
