@@ -75,14 +75,15 @@ Checked by: DWH-Y03
 
 Ratios, averages and other non-additive results are calculated metrics over stored derived metrics. A derived metric
 on a non-additive atomic metric is an error (DWH-M02). Store the numerator and the denominator as derived metrics,
-and write the formula as a calculated metric.
+and write the formula as a calculated metric. Trino raises an error on division by zero, so every calculated
+division uses `nullif` on the denominator.
 
 Correct:
 
 ```yaml
 calculated:
   - name: avg_order_amt_1d
-    formula: order_amt_sum_1d / order_cnt_1d
+    formula: order_amt_sum_1d / nullif(order_cnt_1d, 0)
     inputs: [order_amt_sum_1d, order_cnt_1d]
     description: Average order amount per customer per day.
 ```
@@ -200,7 +201,7 @@ derived:
   - name: order_amt_sum_1d
     atomic: order_amt
     period: 1d
-    days: 1                     # only nd sets days
+    days: 7                     # only nd sets days
     grain: [customer]
     description: Order amount per customer per day.
 ```

@@ -107,7 +107,7 @@ columns:
 # dwd_trade_order_item_di.yml
 columns:
   - name: order_amt
-    description: Order amount in USD.   # same measure, different unit, no null policy
+    description: Order amount in USD, tax included. Never null; 0 for a free order.   # different unit
 ```
 
 Source: Alibaba data-warehouse-detail-layer
@@ -115,7 +115,7 @@ Source: Alibaba data-warehouse-detail-layer
 ### STD-05-04 Additivity (MUST)
 
 Declare each atomic metric as additive, semi-additive or non-additive. A semi-additive metric names the dimension
-it cannot be summed across; the schema requires it. DWH-M02 rejects a derived metric on a non-additive atomic
+it cannot be summed across; the schema requires it (DWH-Y01). DWH-M02 rejects a derived metric on a non-additive atomic
 metric, and DWH-M06 rejects a calculated metric stored in DWD or DWS. Store the numerator and the denominator,
 never the ratio.
 
@@ -149,8 +149,10 @@ Checked by: DWH-M02, DWH-M06
 
 A `historical` attribute is resolved in DWD by joining `dim_*_hist` on the durable key with
 `event_at >= valid_from and (event_at < valid_to or valid_to is null)`, and the value is stored on the fact. A
-`current` attribute is not copied; it is read from `dim_*` at query time. Compare `event_at` with the snapshot
-columns in the same time zone. No lint code checks this yet.
+`current` attribute need not be copied. When it is (STD-05-07), the copy is frozen at load time and goes stale when the
+dimension changes; query `dim_*` for the up-to-date value. Compare `event_at` with the snapshot columns in the same
+time zone. An event earlier than the first snapshot's `valid_from` finds no history row: coalesce the attribute to
+the unknown value, or seed the history before backfilling. No lint code checks this yet.
 
 Correct:
 
@@ -222,7 +224,7 @@ select
     order_id,
     shop_key,
     shop_name           -- copied from dim_trade_shop, key kept
-from ...
+from {{ ref('dwd_trade_order_di') }}
 ```
 
 Incorrect:
@@ -231,7 +233,7 @@ Incorrect:
 select
     order_id,
     shop_name           -- shop_key dropped: the fact can no longer join to the dimension
-from ...
+from {{ ref('dwd_trade_order_di') }}
 ```
 
 Source: Alibaba data-warehouse-detail-layer

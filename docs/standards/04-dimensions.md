@@ -194,10 +194,11 @@ Checked by: DWH-Y01
 
 ### STD-04-06 Special members (MUST)
 
-Two keys are reserved: `'-1'` means unknown (the natural key is null) and `'-2'` means not applicable. Both are
+Two keys are reserved: `'-1'` means unknown (the natural key is null or not found) and `'-2'` means not applicable. Both are
 varchar, like every hash key, and each DIM contains one row for each. The DWD maps a null natural key to `'-1'`
 itself, because the hash of a null is a real, wrong key. The special rows carry placeholder natural keys and
-descriptive text such as `unknown`. No lint code checks this yet.
+descriptive text such as `unknown`. A natural key that is not yet in the DIM becomes an inferred member
+(STD-04-07) rather than `'-1'` once inferred members are in place. No lint code checks this yet.
 
 Correct:
 
@@ -242,7 +243,7 @@ inferred as (
     select distinct o.customer_id, 'unknown' as city, true as is_inferred
     from {{ ref('ods_shop_orders_di') }} as o
     where o.customer_id is not null
-        and o.customer_id not in (select customer_id from real_rows)
+        and not exists (select 1 from real_rows as r where r.customer_id = o.customer_id)
 )
 
 select {{ dbt_utils.generate_surrogate_key(['customer_id']) }} as customer_key, customer_id, city, is_inferred

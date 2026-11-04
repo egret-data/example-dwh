@@ -169,12 +169,13 @@ Correct:
 
 ```sql
 -- ads_finance_customer_order_1d
+{{ config(materialized='table') }}
+
 select
     customer_key,
     order_amt_sum_1d / nullif(order_cnt_1d, 0) as avg_order_amt_1d,
     dt
 from {{ ref('dws_trade_customer_1d') }}
-where dt = date '{{ get_dt() }}'
 ```
 
 Incorrect:
