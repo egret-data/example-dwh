@@ -39,7 +39,7 @@ derived:
   description: Orders per customer per day.
 calculated:
 - name: avg_order_amt_1d
-  formula: order_amt_sum_1d / order_cnt_1d
+  formula: order_amt_sum_1d / nullif(order_cnt_1d, 0)
   inputs:
   - order_amt_sum_1d
   - order_cnt_1d

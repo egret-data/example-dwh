@@ -39,12 +39,49 @@ DIM_SQL = Template(
     """{{ config(materialized='table') }}
 
 -- One current row per natural key (spec D11); the durable key is a hash of the natural key.
+-- $current_comment
+-- The unknown ('-1') and not applicable ('-2') members have a null natural key (STD-04-06).
+with ${current_ctes}special_members as (
+    select
+$unknown
+    union all
+    select
+$not_applicable
+)
+
 select
-    {{ dbt_utils.generate_surrogate_key([$natural]) }} as $key,
-$columns
-from {{ ref('$upstream') }}
--- For a df upstream keep its latest snapshot; adapt the filter for a di upstream.
-where dt = (select max(dt) from {{ ref('$upstream') }})
+$final
+from current_members
+union all
+select
+$final
+from special_members
+"""
+)
+DIM_CURRENT_DF = Template(
+    """current_members as (
+    select
+$members
+    from {{ ref('$upstream') }}
+    where dt = (select max(dt) from {{ ref('$upstream') }})
+),
+
+"""
+)
+DIM_CURRENT_DI = Template(
+    """versions as (
+    select
+$versions
+    from {{ ref('$upstream') }}
+),
+
+current_members as (
+    select
+$members
+    from versions
+    where version_rank = 1
+),
+
 """
 )
 DWD_SQL = Template(
@@ -56,6 +93,31 @@ $columns
 from {{ ref('$upstream') }}
 where dt = date '{{ get_dt() }}'
 """
+)
+DWD_EVENT_SQL = Template(
+    """$config
+-- Process $process. Grain: $grain_sentence
+-- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. order_date).
+-- Event fact (STD-05-08): dt is the Vietnam day of $event_at. A run reads every ODS partition from dt on
+-- and keeps the earliest version of each grain key: the state at the end of the event day.
+${joins}with versions as (
+    select
+$versions
+    from {{ ref('$upstream') }}
+    where
+        dt >= date '{{ get_dt() }}'
+        and {{ in_business_day_tz('$event_at') }}
+)
+
+select
+$columns
+from versions
+where version_rank = 1
+"""
+)
+ACCUMULATING_REFUSAL = (
+    "write accumulating snapshots by hand: merge milestone events from the transaction DWDs by key "
+    "(STD-05-08, STD-08-05)"
 )
 DWS_SQL = Template(
     """$config
@@ -120,13 +182,17 @@ def relationships(model: str, field: str) -> dict:
     return {"relationships": {"arguments": {"to": f"ref('{model}')", "field": field}}}
 
 
-def models_yml(name: str, columns: list[dict], *, grain: list[str] | None, contract=False, meta=None) -> str:
+def models_yml(
+    name: str, columns: list[dict], *, grain: list[str] | None, contract=False, meta=None, tag=None
+) -> str:
     model: dict = {"name": name, "description": ""}
     config: dict = {}
     if contract:
         config["contract"] = {"enforced": True}
     if meta:
         config["meta"] = meta
+    if tag:
+        config |= domain_tags(tag)
     if config:
         model["config"] = config
     model["columns"] = columns
@@ -137,12 +203,17 @@ def models_yml(name: str, columns: list[dict], *, grain: list[str] | None, contr
     return HEADER + yaml.safe_dump({"version": 2, "models": [model]}, sort_keys=False, width=110)
 
 
-def select_list(items: list[tuple[str, str | None]], *, align: bool = True) -> str:
-    """Indented select items; aliases line up on the source text (sqlfluff LT01, as in the ODS models)."""
-    width = max((len(expr) for expr, alias in items if alias), default=0) if align else 0
+def select_list(items: list[tuple[str, str | None]], *, align: bool = True, indent: str = "    ") -> str:
+    """Indented select items; aliases line up on the source text (sqlfluff LT01, as in the ODS models).
+
+    A multi-line expression (a `case`) aligns its alias on its last line, as sqlfluff does.
+    """
+    width = max((len(expr.rsplit("\n", 1)[-1]) for expr, alias in items if alias), default=0) if align else 0
     lines = []
     for index, (expr, alias) in enumerate(items):
-        line = f"    {expr.ljust(width)} as {alias}" if alias else f"    {expr}"
+        padded = expr + " " * (width - len(expr.rsplit("\n", 1)[-1]))
+        expr, padded = (text.replace("\n", "\n" + indent) for text in (expr, padded))
+        line = f"{indent}{padded} as {alias}" if alias else f"{indent}{expr}"
         if len(line.replace("{{ get_dt() }}", "2026-11-02")) > LINE_LENGTH and " filter (where " in expr:
             head, condition = expr.split(" filter (where ", 1)
             line = f"    {head} filter (\n        where {condition.removesuffix(')')}\n    ) as {alias}"
@@ -169,7 +240,22 @@ def surrogate(columns: list[str]) -> str:
     return f"{{{{ dbt_utils.generate_surrogate_key([{natural}]) }}}}"
 
 
-def _ods(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]:
+def durable_key(columns: list[str]) -> str:
+    """The DWD key: '-1' (unknown) when the natural key is null, else its hash (STD-04-06)."""
+    is_null = " or ".join(f"{c} is null" for c in columns)
+    return f"case\n    when {is_null} then '-1'\n    else {surrogate(columns)}\nend"
+
+
+def unique(names) -> list[str]:
+    return list(dict.fromkeys(names))
+
+
+def domain_tags(tag: str) -> dict:
+    """`config.tags` that DAGs select by (STD-09-04, STD-11-08)."""
+    return {"tags": [tag]}
+
+
+def _ods(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict[str, str]:
     source, table, load = parts["source"], parts["table"], parts["load"]
     comment = (
         f"Daily increment of {source}.{table} for the business day dt (spec D12)."
@@ -193,7 +279,26 @@ def _ods(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
     }
 
 
-def _dim(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]:
+def dim_current(upstream: str, key: str, natural: list[str], attributes: list[str]) -> str:
+    """The current_members CTE: the latest df partition, or the latest version per natural key of a di."""
+    members = select_list(
+        [(surrogate(natural), key), *[(c, None) for c in [*natural, *attributes]]], indent="        "
+    )
+    if not upstream.endswith("_di"):
+        return DIM_CURRENT_DF.substitute(members=members, upstream=upstream)
+    rank = f"row_number() over (partition by {', '.join(natural)} order by dt desc)"
+    versions = select_list(
+        [*[(c, None) for c in [*natural, *attributes]], (rank, "version_rank")], indent="        "
+    )
+    return DIM_CURRENT_DI.substitute(versions=versions, members=members, upstream=upstream)
+
+
+def special_member(value: str, key: str, natural: list[str], attributes: list[str]) -> str:
+    nulls = [(f"cast(null as {data_type(c)})", c) for c in [*natural, *attributes]]
+    return select_list([(value, key), *nulls], indent="        ")
+
+
+def _dim(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict[str, str]:
     scope, dim_name = parts["scope"], parts["dimension"]
     if parts["hist"]:
         raise ScaffoldError(f"{name}: _hist tables are snapshots; scaffold dim_{scope}_{dim_name} to get one")
@@ -217,19 +322,27 @@ def _dim(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
     key = f"{dim_name}_key"
     natural = dimension["natural_key"]
     attributes = [a["name"] for a in dimension["attributes"]]
+    tag = f"domain:{scope}"
     sql = DIM_SQL.substitute(
-        natural=", ".join(f"'{k}'" for k in natural),
-        key=key,
-        columns=",\n".join(f"    {c}" for c in [*natural, *attributes]),
-        upstream=upstream[0],
+        current_comment=(
+            "A di upstream holds the rows changed on each dt: keep the latest version per natural key."
+            if upstream[0].endswith("_di")
+            else "A df upstream: its latest partition is the current state."
+        ),
+        current_ctes=dim_current(upstream[0], key, natural, attributes),
+        unknown=special_member("'-1'", key, natural, attributes),
+        not_applicable=special_member("'-2'", key, natural, attributes),
+        final=select_list([(c, None) for c in [key, *natural, *attributes]]),
     )
+    # The special members have a null natural key, so not_null skips them.
+    real_rows = {"not_null": {"config": {"where": f"{key} not in ('-1', '-2')"}}}
     columns = [column(key, contract=True, tests=["unique", "not_null"])]
-    columns += [column(k, contract=True, tests=["not_null"]) for k in natural]
+    columns += [column(k, contract=True, tests=[real_rows]) for k in natural]
     columns += [column(a, contract=True) for a in attributes]
     folder = f"models/dim/{scope}"
     files = {
         f"{folder}/{name}.sql": sql,
-        f"{folder}/{name}.yml": models_yml(name, columns, grain=None, contract=True),
+        f"{folder}/{name}.yml": models_yml(name, columns, grain=None, contract=True, tag=tag),
     }
     if dimension["history"] == "scd4":
         snapshot = {
@@ -242,6 +355,7 @@ def _dim(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
                         "unique_key": [key],
                         "strategy": "check",
                         "check_cols": historical,
+                        "tags": [tag],
                         "snapshot_meta_column_names": {
                             "dbt_valid_from": "valid_from",
                             "dbt_valid_to": "valid_to",
@@ -254,13 +368,23 @@ def _dim(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
     return files
 
 
-def _dwd(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]:
+def _dwd(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict[str, str]:
     domain, process_name = parts["domain"], parts["process"]
     process = wh.processes.get(process_name)
     if process is None:
         raise ScaffoldError(f"{name}: process {process_name!r} is not in warehouse/processes.yml")
     if process["domain"] != domain:
         raise ScaffoldError(f"{name}: process {process_name} belongs to domain {process['domain']}")
+    if process["fact_type"] == "accumulating_snapshot":
+        raise ScaffoldError(f"{name}: {ACCUMULATING_REFUSAL}")
+    transaction = process["fact_type"] == "transaction"
+    if transaction and not event_at:
+        raise ScaffoldError(
+            f"{name}: --event-at is required for a transaction process: the event timestamp column, "
+            "for example created_at (STD-05-08)"
+        )
+    if event_at and not transaction:
+        raise ScaffoldError(f"{name}: --event-at applies to transaction processes only")
     row = wh.bus.get(process_name)
     if row is None:
         raise ScaffoldError(f"{name}: add a warehouse/bus_matrix.yml row for process {process_name} first")
@@ -275,14 +399,25 @@ def _dwd(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
         for cell in row["dimensions"]
     }
     select = [(g, None) for g in grain if g not in keys]
-    select += [(surrogate(hashed[key]), key) for key in keys]
+    select += [(durable_key(hashed[key]), key) for key in keys]
+    if transaction:
+        select.append((event_at, None))
     select.append((TODAY, "dt"))
-    sql = DWD_SQL.substitute(
+    template = DWD_EVENT_SQL if transaction else DWD_SQL
+    versions = ""
+    if transaction:
+        partition = unique(c for g in grain for c in (hashed[g] if g in keys else [g]))
+        listed = unique([*partition, *(c for key in keys for c in hashed[key]), event_at, "dt"])
+        rank = f"row_number() over (partition by {', '.join(partition)} order by dt)"
+        versions = select_list([*[(c, None) for c in listed], (rank, "version_rank")], indent="        ")
+    sql = template.substitute(
         config=PARTITION_CONFIG,
         process=process_name,
         grain_sentence=process["grain"],
         joins="".join(f"-- joins {{{{ ref('{model}') }}}}\n" for model in upstream[1:]),
         columns=select_list(select),
+        versions=versions,
+        event_at=event_at,
         upstream=upstream[0],
     )
     columns = []
@@ -300,12 +435,19 @@ def _dwd(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
                     tests=[relationships(dim_model(dimension), f"{dimension['name']}_key")],
                 )
             )
+    if transaction:
+        columns.append(column(event_at, contract=True))
     columns.append(column("dt", contract=True, tests=["not_null"]))
     folder = f"models/dwd/{domain}"
     return {
         f"{folder}/{name}.sql": sql,
         f"{folder}/{name}.yml": models_yml(
-            name, columns, grain=[*grain, "dt"], contract=True, meta={"process": process_name}
+            name,
+            columns,
+            grain=[*grain, "dt"],
+            contract=True,
+            meta={"process": process_name},
+            tag=f"domain:{domain}",
         ),
     }
 
@@ -319,7 +461,7 @@ def table_window(period: str, days: int) -> str:
     return f"dt > {TODAY} - interval '{7 if period == '1w' else days}' day"
 
 
-def _dws(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]:
+def _dws(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict[str, str]:
     domain, period = parts["domain"], parts["period"]
     if domain not in wh.domains:
         raise ScaffoldError(f"{name}: {domain!r} is not a domain in warehouse/domains.yml")
@@ -375,12 +517,12 @@ def _dws(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
     return {
         f"{folder}/{name}.sql": sql,
         f"{folder}/{name}.yml": models_yml(
-            name, columns, grain=[*grain, "dt"], contract=True, meta={"grain": grain}
+            name, columns, grain=[*grain, "dt"], contract=True, meta={"grain": grain}, tag=f"domain:{domain}"
         ),
     }
 
 
-def _ads(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]:
+def _ads(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict[str, str]:
     if not metrics:
         raise ScaffoldError(f"{name}: --metric is required for an ADS table")
     select = [(g, None) for g in grain]
@@ -398,7 +540,7 @@ def _ads(name, parts, wh, grain, metrics, upstream, watermark) -> dict[str, str]
     folder = f"models/ads/{parts['app']}"
     return {
         f"{folder}/{name}.sql": sql,
-        f"{folder}/{name}.yml": models_yml(name, columns, grain=[*grain, "dt"]),
+        f"{folder}/{name}.yml": models_yml(name, columns, grain=[*grain, "dt"], tag=f"app:{parts['app']}"),
     }
 
 
@@ -414,6 +556,7 @@ def scaffold(
     metrics=(),
     upstream=(),
     watermark: str = "updated_at",
+    event_at: str | None = None,
 ) -> dict[str, str]:
     layer = name.split("_", 1)[0]
     pattern = PATTERNS.get(layer)
@@ -429,7 +572,7 @@ def scaffold(
     if layer != "ods" and not upstream:
         raise ScaffoldError(f"{name}: --from is required (the upstream model or models)")
     files = BUILDERS[layer](
-        name, match.groupdict(), wh, list(grain), list(metrics), list(upstream), watermark
+        name, match.groupdict(), wh, list(grain), list(metrics), list(upstream), watermark, event_at
     )
     return {
         (str(PurePosixPath(project_dir, path)) if project_dir else path): text for path, text in files.items()

@@ -147,11 +147,24 @@ def test_scaffold_refuses_what_the_design_does_not_allow(wh, name, kwargs, messa
 def test_scaffolded_dwd_passes_every_lint_family(wh, lint):
     builder, ids = good_project()
     files = scaffold(
-        "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["ods_shop_orders_di"]
+        "dwd_trade_order_di",
+        wh,
+        project_dir="",
+        grain=["order_id"],
+        upstream=["ods_shop_orders_di"],
+        event_at="created_at",
     )
 
+    sql = files["models/dwd/trade/dwd_trade_order_di.sql"]
+    assert "with versions as (" in sql
+    assert "row_number() over (partition by order_id order by dt) as version_rank" in sql
+    assert "where version_rank = 1\n" in sql
+    assert f"dt >= {TODAY}" in sql
+    assert "{{ in_business_day_tz('created_at') }}" in sql
+    assert "select *" not in sql
     model = model_of(files["models/dwd/trade/dwd_trade_order_di.yml"])
     assert model["config"]["meta"] == {"process": "order"}
+    assert model["config"]["tags"] == ["domain:trade"]
     assert columns(model)["order_date_key"]["data_tests"] == [
         {"relationships": {"arguments": {"to": "ref('dim_pub_date')", "field": "date_key"}}}
     ]
@@ -224,7 +237,9 @@ def test_other_periods_put_their_window_in_where(make_warehouse, name, metrics, 
 
 
 def test_dwd_hashes_the_role_column_or_the_natural_key(wh):
-    order = scaffold("dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"])
+    order = scaffold(
+        "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="created_at"
+    )
     sql = order["models/dwd/trade/dwd_trade_order_di.sql"]
     assert "generate_surrogate_key(['order_date']) }}" in sql
     assert "generate_surrogate_key(['customer_id']) }}" in sql
@@ -232,10 +247,101 @@ def test_dwd_hashes_the_role_column_or_the_natural_key(wh):
         "-- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. order_date)"
         in sql
     )
-    shipment = scaffold("dwd_trade_shipment_di", wh, project_dir="", grain=["shipment_id"], upstream=["x"])
-    assert (
-        "generate_surrogate_key(['ship_date']) }}" in shipment["models/dwd/trade/dwd_trade_shipment_di.sql"]
+
+
+def test_dwd_maps_a_null_natural_key_to_the_unknown_member(wh):
+    files = scaffold(
+        "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="created_at"
     )
+    sql = files["models/dwd/trade/dwd_trade_order_di.sql"]
+    for key, natural in [("customer_key", "customer_id"), ("order_date_key", "order_date")]:
+        case = (
+            f"    case\n"
+            f"        when {natural} is null then '-1'\n"
+            f"        else {{{{ dbt_utils.generate_surrogate_key(['{natural}']) }}}}\n"
+            f"    end"
+        )
+        assert re.search(rf"{re.escape(case)}\s+as {key},", sql), key
+    # The versions CTE lists each key's source column, the event column and dt, nothing else.
+    versions = sql.split("with versions as (", 1)[1].split("from {{ ref('x') }}", 1)[0]
+    for name in ("order_id", "order_date", "customer_id", "shop_id", "created_at", "dt"):
+        assert re.search(rf"^\s+{name},$", versions, re.MULTILINE), name
+
+
+def test_accumulating_snapshot_dwd_is_written_by_hand(wh):
+    with pytest.raises(ScaffoldError, match="write accumulating snapshots by hand: merge milestone events"):
+        scaffold(
+            "dwd_trade_shipment_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="x_at"
+        )
+
+
+def test_transaction_dwd_requires_the_event_column(wh):
+    with pytest.raises(ScaffoldError, match="--event-at is required"):
+        scaffold("dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"])
+
+
+def test_dimension_unions_the_special_members_with_a_null_natural_key(wh):
+    files = scaffold("dim_pub_customer", wh, project_dir="", upstream=["ods_shop_customers_df"])
+
+    sql = files["models/dim/pub/dim_pub_customer.sql"]
+    assert "special_members as (" in sql
+    assert re.search(r"'-1'\s+as customer_key", sql)
+    assert re.search(r"'-2'\s+as customer_key", sql)
+    assert re.search(r"cast\(null as bigint\)\s+as customer_id", sql)
+    assert re.search(r"cast\(null as varchar\)\s+as city", sql)
+    assert "union all" in sql
+    assert "select *" not in sql
+    model = model_of(files["models/dim/pub/dim_pub_customer.yml"])
+    assert columns(model)["customer_id"]["data_tests"] == [
+        {"not_null": {"config": {"where": "customer_key not in ('-1', '-2')"}}}
+    ]
+
+
+def test_dimension_from_a_df_upstream_reads_its_latest_partition(wh):
+    files = scaffold("dim_pub_customer", wh, project_dir="", upstream=["ods_shop_customers_df"])
+
+    sql = files["models/dim/pub/dim_pub_customer.sql"]
+    assert "where dt = (select max(dt) from {{ ref('ods_shop_customers_df') }})" in sql
+    assert "row_number()" not in sql
+
+
+def test_dimension_from_a_di_upstream_keeps_the_latest_version_per_natural_key(wh):
+    files = scaffold("dim_pub_customer", wh, project_dir="", upstream=["ods_shop_customers_di"])
+
+    sql = files["models/dim/pub/dim_pub_customer.sql"]
+    assert "row_number() over (partition by customer_id order by dt desc) as version_rank" in sql
+    assert "where version_rank = 1\n" in sql
+    assert "max(dt)" not in sql
+
+
+@pytest.mark.parametrize(
+    ("name", "kwargs", "path", "tags"),
+    [
+        ("dim_pub_customer", {"upstream": ["x_df"]}, "models/dim/pub/dim_pub_customer.yml", ["domain:pub"]),
+        ("dim_trade_shop", {"upstream": ["x_df"]}, "models/dim/trade/dim_trade_shop.yml", ["domain:trade"]),
+        (
+            "dws_trade_customer_1d",
+            {"grain": ["customer_key"], "metrics": ["order_cnt_1d"], "upstream": ["x"]},
+            "models/dws/trade/dws_trade_customer_1d.yml",
+            ["domain:trade"],
+        ),
+        (
+            "ads_bi_customer_daily",
+            {"grain": ["customer_key"], "metrics": ["order_cnt_1d"], "upstream": ["x"]},
+            "models/ads/bi/ads_bi_customer_daily.yml",
+            ["app:bi"],
+        ),
+    ],
+)
+def test_every_scaffolded_model_after_ods_carries_its_selection_tag(wh, name, kwargs, path, tags):
+    files = scaffold(name, wh, project_dir="", **kwargs)
+    assert model_of(files[path])["config"]["tags"] == tags
+
+
+def test_the_hist_snapshot_runs_with_its_dimension(wh):
+    files = scaffold("dim_pub_customer", wh, project_dir="", upstream=["x_df"])
+    snapshot = yaml.safe_load(files["snapshots/dim_pub_customer_hist.yml"])["snapshots"][0]
+    assert snapshot["config"]["tags"] == ["domain:pub"]
 
 
 def test_scd4_without_a_historical_attribute_is_refused(make_warehouse):
@@ -252,7 +358,7 @@ def test_scd4_without_a_historical_attribute_is_refused(make_warehouse):
     [
         ("ods_shop_orders_di", {"grain": ["order_id"]}),
         ("dim_pub_customer", {"upstream": ["x"]}),
-        ("dwd_trade_order_di", {"grain": ["order_id"], "upstream": ["x"]}),
+        ("dwd_trade_order_di", {"grain": ["order_id"], "upstream": ["x"], "event_at": "created_at"}),
         (
             "dws_trade_customer_1d",
             {"grain": ["customer_key"], "metrics": ["order_cnt_1d"], "upstream": ["x"]},
@@ -282,7 +388,10 @@ def test_no_generated_line_is_longer_than_110_rendered_characters(wh):
         metrics=["app_order_amt_sum_30d"],
         upstream=["dwd_trade_order_di"],
     )
-    files |= scaffold("dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"])
+    files |= scaffold(
+        "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="created_at"
+    )
+    files |= scaffold("dim_pub_customer", wh, project_dir="", upstream=["ods_shop_customers_di"])
     for path, text in files.items():
         if path.endswith(".sql"):
             for line in text.replace("{{ get_dt() }}", "2026-11-02").splitlines():
@@ -303,7 +412,7 @@ def test_scaffolded_ads_writes_calculated_metrics_as_formulas_and_lints_clean(wh
     )
 
     assert (
-        "order_amt_sum_1d / order_cnt_1d as avg_order_amt_1d"
+        "order_amt_sum_1d / nullif(order_cnt_1d, 0) as avg_order_amt_1d"
         in files["models/ads/bi/ads_bi_customer_daily.sql"]
     )
     add_to_project(builder, files, deps=[ids["dws_customer"]])
@@ -334,3 +443,9 @@ def test_cli_scaffold_prints_writes_and_rejects(make_warehouse, capsys, tmp_path
         main(["scaffold", "dwd_trade_refund_di", "--grain", "x", "--from", "y", "--warehouse", warehouse])
         == 2
     )
+
+    dwd = ["scaffold", "dwd_trade_order_di", "--grain", "order_id", "--from", "ods_shop_orders_di"]
+    assert main([*dwd, "--warehouse", warehouse]) == 2
+    assert "--event-at is required" in capsys.readouterr().err
+    assert main([*dwd, "--event-at", "created_at", "--warehouse", warehouse]) == 0
+    assert "in_business_day_tz('created_at')" in capsys.readouterr().out

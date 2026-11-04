@@ -20,7 +20,9 @@ GENERATE = textwrap.dedent(
     cases = [
         ("ods_shop_orders_di", {"grain": ["order_id"]}),
         ("dim_pub_customer", {"upstream": ["ods_shop_customers_df"]}),
-        ("dwd_trade_order_di", {"grain": ["order_id"], "upstream": ["ods_shop_orders_di"]}),
+        ("dim_trade_shop", {"upstream": ["ods_shop_shops_di"]}),
+        ("dwd_trade_order_di", {"grain": ["order_id"], "upstream": ["ods_shop_orders_di"],
+                                "event_at": "created_at"}),
         ("dws_trade_customer_1d", {"grain": ["customer_key"], "upstream": ["dwd_trade_order_di"],
                                    "metrics": ["order_amt_sum_1d", "order_cnt_1d"]}),
         ("dws_trade_customer_nd", {"grain": ["customer_key"], "upstream": ["dwd_trade_order_di"],

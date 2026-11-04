@@ -132,6 +132,7 @@ def cmd_scaffold(args: argparse.Namespace) -> int:
             metrics=args.metric,
             upstream=args.upstream,
             watermark=args.watermark,
+            event_at=args.event_at,
         )
         if args.write:
             for path in write_files(files, Path(".")):
@@ -202,6 +203,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--grain", nargs="+", default=[], metavar="COLUMN")
     p.add_argument("--metric", nargs="+", default=[], metavar="NAME")
     p.add_argument("--watermark", default="updated_at", help="ODS di watermark column")
+    p.add_argument(
+        "--event-at", default=None, metavar="COLUMN", help="event timestamp of a transaction DWD (STD-05-08)"
+    )
     p.add_argument("--warehouse", type=Path, default=Path("warehouse"))
     p.add_argument("--project-dir", default="dags/dbt")
     p.add_argument("--write", action="store_true", help="write the files (never overwrites)")
