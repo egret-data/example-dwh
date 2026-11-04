@@ -1,7 +1,7 @@
 COMPOSE := docker compose -f dev/compose.yml
 RUN := $(COMPOSE) run --rm airflow
 
-.PHONY: dev-up dev-down smoke lint fmt image dbt-parse
+.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration
 
 dev-up:
 	$(COMPOSE) up -d trino
@@ -26,3 +26,6 @@ image:
 
 dbt-parse:
 	$(RUN) 'cd dags/dbt && $$DBT_EXECUTABLE_PATH parse'
+
+test-integration:
+	$(RUN) "/opt/dbt-venv/bin/python -m pytest tests/integration -v"
