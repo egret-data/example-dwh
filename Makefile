@@ -1,7 +1,7 @@
 COMPOSE := docker compose -f dev/compose.yml
 RUN := $(COMPOSE) run --rm airflow
 
-.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags
+.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e
 
 dev-up:
 	$(COMPOSE) up -d trino
@@ -32,3 +32,6 @@ test-integration:
 
 test-dags:
 	$(RUN) "airflow db migrate >/dev/null && python -m pytest tests/dags -v"
+
+e2e:
+	./dev/e2e.sh
