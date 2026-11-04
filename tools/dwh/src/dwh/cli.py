@@ -1,10 +1,12 @@
 """The `dwh` command line."""
 
 import argparse
+import json
 import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from dwh.design_gate import added_concepts, check_gate, load_warehouse_at
 from dwh.findings import Finding
 from dwh.lint import Context, run_lint
 from dwh.manifest import load_manifest
@@ -44,6 +46,21 @@ def cmd_lint(args: argparse.Namespace) -> int:
     return report(findings)
 
 
+def cmd_design_gate(args: argparse.Namespace) -> int:
+    repo = args.repo.resolve()
+    warehouse_rel = args.warehouse.resolve().relative_to(repo).as_posix()
+    try:
+        base = load_warehouse_at(args.base, warehouse_rel, repo)
+    except ValueError as exc:
+        print(f"dwh: {exc}", file=sys.stderr)
+        return 2
+    event = json.loads(args.event.read_text())
+    pull_request = event.get("pull_request") or {}
+    labels = [label["name"] for label in pull_request.get("labels") or []]
+    added = added_concepts(base, load_warehouse(args.warehouse))
+    return report(check_gate(added, body=pull_request.get("body") or "", labels=labels, repo_root=repo))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dwh", description="example-dwh design metadata tools")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -57,6 +74,13 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--manifest", type=Path, default=Path(".dbt/target/manifest.json"))
     p.add_argument("--select", nargs="*", default=[], help="only report codes starting with these prefixes")
     p.set_defaults(func=cmd_lint)
+
+    p = sub.add_parser("design-gate", help="require an approved design for model-extending changes")
+    p.add_argument("--base", required=True, help="git ref of the PR base, e.g. origin/main")
+    p.add_argument("--event", type=Path, required=True, help="GitHub event JSON ($GITHUB_EVENT_PATH)")
+    p.add_argument("--warehouse", type=Path, default=Path("warehouse"))
+    p.add_argument("--repo", type=Path, default=Path("."))
+    p.set_defaults(func=cmd_design_gate)
 
     return parser
 

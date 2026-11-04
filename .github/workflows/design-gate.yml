@@ -1,0 +1,22 @@
+name: design-gate
+
+# Separate from ci.yml so that adding or removing the design-approved label re-runs only this check.
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+jobs:
+  design-gate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Model-extending changes need an approved design (spec §6.3)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: uv run --locked --project tools/dwh dwh design-gate --base "origin/$BASE_REF" --event "$GITHUB_EVENT_PATH"
