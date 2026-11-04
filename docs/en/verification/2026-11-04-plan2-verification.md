@@ -55,4 +55,5 @@ ODS tables built under plan 1 need `dbt build --full-refresh` once: their `_at` 
 
 - D02 cannot see columns that are missing from the `.yml`.
 - The real project has only ODS models, so N05/N06, L04/L05, B and M are proven by fixtures only until plan 4.
-- `design-gate` must be made a required check and CODEOWNERS added (repository settings, outside this branch).
+- Done on 2026-11-04: `main` requires the `lint`, `stack` and `design-gate` checks (branch protection), and
+  `.github/CODEOWNERS` requests the owner's review. Code-owner review is not required while the repo has one maintainer.
