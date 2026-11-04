@@ -207,11 +207,10 @@ Checked by: DWH-S01, DWH-S02
 A fact can reach the warehouse after its `dt` was loaded. Late facts are handled one way: re-run the affected dts
 (skill `dwh-backfill`); never patch rows, and never widen a run to load earlier days into today's partition. Each run
 rebuilds exactly one dt (STD-08-04). An event DWD re-run for dt D reads every ODS partition from D onward
-(STD-05-08), so rows that reached ODS after D are picked up. When a source's watermark can lag, for example a source
-that commits rows with an older `updated_at`, write the lag in the source's description so the operator knows which
-dts to re-run. A source whose watermark can lag is loaded `df` (or
-`full_compare`), because a `di` window cannot see rows that arrive with an old `updated_at`. The inferred-member case
-for dimensions is STD-04-07.
+(STD-05-08), so rows that reached ODS after D are picked up. For late facts, write the lag in the source's
+description so the operator knows which dts to re-run. A `di` source whose watermark can lag, for example one that
+commits rows with an older `updated_at`, is loaded `df` (or `full_compare`) instead, because a `di` window cannot see
+rows that arrive with an old `updated_at`. The inferred-member case for dimensions is STD-04-07.
 
 Correct:
 

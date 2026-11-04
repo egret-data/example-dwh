@@ -158,8 +158,18 @@ event earlier than the first snapshot takes the first known version. A key with 
 Correct:
 
 ```sql
--- versions: the event-day ODS rows of STD-05-08
-with history as (
+with versions as (
+    -- the event-day ODS rows of STD-05-08, one per grain key
+    select
+        order_id,
+        customer_id,
+        created_at,
+        row_number() over (partition by order_id order by dt) as version_rank
+    from {{ ref('ods_shop_orders_di') }}
+    where dt >= date '{{ get_dt() }}'
+),
+
+history as (
     select
         customer_key,
         city,
