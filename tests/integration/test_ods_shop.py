@@ -12,8 +12,8 @@ SCHEMA = "itest"
 ODS = f'{CATALOG}."{SCHEMA}_ods"'
 
 
-def build(dt: str) -> None:
-    run_dbt(MAIN_PROJECT, ["build", "--select", "tag:ods_shop", "--vars", f"{{dt: '{dt}'}}"], SCHEMA)
+def build(dt: str) -> str:
+    return run_dbt(MAIN_PROJECT, ["build", "--select", "tag:ods_shop", "--vars", f"{{dt: '{dt}'}}"], SCHEMA)
 
 
 def count(table: str, dt: str | None = None) -> int:
@@ -42,6 +42,26 @@ def test_rerun_same_dt_is_idempotent():
     build("2026-11-02")
     assert count("ods_shop_orders_di") == 2
     assert count("ods_shop_customers_df") == 3
+
+
+def test_vietnam_day_unit_tests_run_in_the_ods_build():
+    out = build("2026-11-02")
+
+    assert "orders_di_window_is_the_vietnam_day" in out
+    assert "orders_di_converts_a_utc_source_to_the_vietnam_day" in out
+
+
+def test_timestamps_are_stored_with_time_zone():
+    rows = query(
+        f"SELECT column_name, data_type FROM {CATALOG}.information_schema.columns "
+        f"WHERE table_schema = '{SCHEMA}_ods' AND table_name = 'ods_shop_orders_di' "
+        "AND column_name IN ('created_at', 'updated_at') ORDER BY column_name"
+    )
+
+    assert rows == [
+        ("created_at", "timestamp(6) with time zone"),
+        ("updated_at", "timestamp(6) with time zone"),
+    ]
 
 
 def test_next_dt_adds_partition_and_keeps_previous():
