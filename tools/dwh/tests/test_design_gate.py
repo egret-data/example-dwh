@@ -168,3 +168,119 @@ def test_cli_rejects_an_unknown_base_ref(tmp_path, capsys):
 
     assert rc == 2
     assert "no-such-ref" in capsys.readouterr().err
+
+
+def test_gate_rejects_a_path_traversal_link(tmp_path):
+    (tmp_path / "docs" / "designs").mkdir(parents=True)
+    (tmp_path / "README.md").write_text("# readme\n")
+
+    findings = check_gate(
+        ["domain crm"], body="docs/designs/../../README.md", labels=["design-approved"], repo_root=tmp_path
+    )
+
+    assert [f.code for f in findings] == ["DWH-G02"]
+
+
+def test_gate_rejects_a_symlink_leaving_docs_designs(tmp_path):
+    (tmp_path / "docs" / "designs").mkdir(parents=True)
+    (tmp_path / "outside.md").write_text("# outside\n")
+    (tmp_path / "docs" / "designs" / "evil.md").symlink_to(tmp_path / "outside.md")
+
+    findings = check_gate(
+        ["domain crm"], body="docs/designs/evil.md", labels=["design-approved"], repo_root=tmp_path
+    )
+
+    assert [f.code for f in findings] == ["DWH-G02"]
+
+
+def test_gate_rejects_a_link_that_is_part_of_a_url(tmp_path):
+    (tmp_path / "docs" / "designs").mkdir(parents=True)
+    (tmp_path / "docs" / "designs" / "a.md").write_text("# A\n")
+
+    findings = check_gate(
+        ["domain crm"],
+        body="https://example.com/docs/designs/a.md",
+        labels=["design-approved"],
+        repo_root=tmp_path,
+    )
+
+    assert [f.code for f in findings] == ["DWH-G02"]
+
+
+def test_added_concepts_reports_a_new_dimension():
+    def add_dimension(files):
+        files["dimensions"]["dimensions"].append(
+            {"name": "store", "description": "Store.", "scd_type": 1, "attributes": []}
+        )
+
+    assert added_concepts(warehouse(), warehouse(add_dimension)) == ["dimension store"]
+
+
+def make_repo(tmp_path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    git(repo, "init", "-q")
+    write_warehouse(repo / "warehouse")
+    (repo / "docs" / "designs").mkdir(parents=True)
+    (repo / "docs" / "designs" / "crm.md").write_text("# CRM\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "base")
+    base = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+    return repo, base
+
+
+def run_gate(tmp_path, repo, base, event_body, warehouse_dir=None):
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"pull_request": event_body}))
+    return main(
+        [
+            "design-gate",
+            "--base",
+            base,
+            "--event",
+            str(event),
+            "--warehouse",
+            str(warehouse_dir or repo / "warehouse"),
+            "--repo",
+            str(repo),
+        ]
+    )
+
+
+def test_cli_passes_with_label_and_design_link(tmp_path, capsys):
+    repo, base = make_repo(tmp_path)
+    data = load_warehouse(repo / "warehouse").data
+    add_crm(data)
+    for name in ("domains", "processes", "metrics"):
+        (repo / "warehouse" / f"{name}.yml").write_text(yaml.safe_dump(data[name], sort_keys=False))
+    body = {"body": "Design: docs/designs/crm.md", "labels": [{"name": "design-approved"}]}
+
+    assert run_gate(tmp_path, repo, base, body) == 0
+
+
+def test_cli_rejects_a_warehouse_outside_the_repo(tmp_path, capsys):
+    repo, base = make_repo(tmp_path)
+    outside = tmp_path / "elsewhere"
+    write_warehouse(outside)
+
+    rc = run_gate(tmp_path, repo, base, {"body": "", "labels": []}, warehouse_dir=outside)
+
+    assert rc == 2
+    assert "--warehouse must be inside --repo" in capsys.readouterr().err
+
+
+def test_cli_rejects_malformed_base_yaml(tmp_path, capsys):
+    repo, _ = make_repo(tmp_path)
+    (repo / "warehouse" / "domains.yml").write_text("domains: [unclosed\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-q", "-m", "broken")
+    broken = subprocess.run(
+        ["git", "-C", str(repo), "rev-parse", "HEAD"], check=True, capture_output=True, text=True
+    ).stdout.strip()
+
+    rc = run_gate(tmp_path, repo, broken, {"body": "", "labels": []})
+
+    assert rc == 2
+    assert "dwh:" in capsys.readouterr().err

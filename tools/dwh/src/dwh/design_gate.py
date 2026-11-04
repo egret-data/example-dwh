@@ -16,7 +16,7 @@ CONCEPTS = (
     ("dimensions", "dimensions", "dimension"),
     ("metrics", "atomic", "atomic metric"),
 )
-DESIGN_LINK = re.compile(r"docs/designs/[\w./-]+?\.md")
+DESIGN_LINK = re.compile(r"(?:^|(?<=[\s(`]))docs/designs/[\w./-]+?\.md")
 
 
 def added_concepts(base: Warehouse, head: Warehouse) -> list[str]:
@@ -34,7 +34,8 @@ def check_gate(added: list[str], *, body: str, labels: list[str], repo_root: Pat
     findings = []
     if LABEL not in labels:
         findings.append(Finding("warehouse/", "DWH-G01", f"adds {what}: the PR needs the label {LABEL}"))
-    links = [link for link in DESIGN_LINK.findall(body or "") if (repo_root / link).is_file()]
+    designs = (repo_root / "docs" / "designs").resolve()
+    links = [link for link in DESIGN_LINK.findall(body or "") if is_design_record(repo_root / link, designs)]
     if not links:
         findings.append(
             Finding(
@@ -46,8 +47,13 @@ def check_gate(added: list[str], *, body: str, labels: list[str], repo_root: Pat
     return findings
 
 
+def is_design_record(path: Path, designs: Path) -> bool:
+    resolved = path.resolve()
+    return resolved.is_file() and resolved.is_relative_to(designs)
+
+
 def load_warehouse_at(ref: str, warehouse_rel: str, repo_root: Path) -> Warehouse:
-    """The warehouse YAML as of git `ref`. Raises ValueError for an unknown ref."""
+    """The warehouse YAML as of git `ref`. Raises ValueError for an unknown ref or malformed YAML."""
     check = subprocess.run(
         ["git", "-C", str(repo_root), "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
         capture_output=True,
@@ -64,5 +70,8 @@ def load_warehouse_at(ref: str, warehouse_rel: str, repo_root: Path) -> Warehous
             text=True,
             check=False,
         )
-        data[name] = yaml.safe_load(shown.stdout) if shown.returncode == 0 else {}
+        try:
+            data[name] = yaml.safe_load(shown.stdout) if shown.returncode == 0 else {}
+        except yaml.YAMLError as exc:
+            raise ValueError(f"{warehouse_rel}/{name}.yml at {ref} is not valid YAML: {exc}") from exc
     return Warehouse(repo_root / warehouse_rel, data)

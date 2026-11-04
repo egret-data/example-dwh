@@ -48,7 +48,11 @@ def cmd_lint(args: argparse.Namespace) -> int:
 
 def cmd_design_gate(args: argparse.Namespace) -> int:
     repo = args.repo.resolve()
-    warehouse_rel = args.warehouse.resolve().relative_to(repo).as_posix()
+    try:
+        warehouse_rel = args.warehouse.resolve().relative_to(repo).as_posix()
+    except ValueError:
+        print("dwh: --warehouse must be inside --repo", file=sys.stderr)
+        return 2
     try:
         base = load_warehouse_at(args.base, warehouse_rel, repo)
     except ValueError as exc:
