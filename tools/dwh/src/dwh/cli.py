@@ -25,11 +25,20 @@ def cmd_validate(args: argparse.Namespace) -> int:
 
 def cmd_lint(args: argparse.Namespace) -> int:
     findings = validate(args.warehouse)
-    if not findings:
-        if not args.manifest.is_file():
-            print(f"dwh: {args.manifest} not found; run `make manifest` first", file=sys.stderr)
-            return 2
-        findings = run_lint(Context(load_warehouse(args.warehouse), load_manifest(args.manifest)))
+    if findings:
+        return report(findings)  # --select never hides validation findings: the lint rules did not run
+    if not args.manifest.is_file():
+        print(f"dwh: {args.manifest} not found; run `make manifest` first", file=sys.stderr)
+        return 2
+    try:
+        project = load_manifest(args.manifest)
+    except (ValueError, KeyError, TypeError, AttributeError) as error:
+        print(
+            f"dwh: {args.manifest} is not a readable dbt manifest ({error!r}); run `make manifest`",
+            file=sys.stderr,
+        )
+        return 2
+    findings = run_lint(Context(load_warehouse(args.warehouse), project))
     if args.select:
         findings = [f for f in findings if f.code.startswith(tuple(args.select))]
     return report(findings)

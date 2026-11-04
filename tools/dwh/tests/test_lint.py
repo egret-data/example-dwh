@@ -1,3 +1,5 @@
+import pytest
+
 from dwh.cli import main
 from fixtures.manifest import good_project
 
@@ -71,3 +73,33 @@ def test_cli_lint_missing_manifest_exits_2(make_warehouse, tmp_path, capsys):
 
     assert rc == 2
     assert "make manifest" in capsys.readouterr().err
+
+
+def test_cli_lint_select_never_hides_yaml_findings(make_warehouse, write_manifest, capsys):
+    builder, _ = good_project()
+
+    rc = main(
+        [
+            "lint",
+            "--warehouse",
+            str(make_warehouse(drop=["glossary"])),
+            "--manifest",
+            str(write_manifest(builder)),
+            "--select",
+            "DWH-T",
+        ]
+    )
+
+    assert rc == 1
+    assert "DWH-Y01" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("content", ["{}", "not json", "[]"])
+def test_cli_lint_unreadable_manifest_exits_2(make_warehouse, tmp_path, capsys, content):
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(content)
+
+    rc = main(["lint", "--warehouse", str(make_warehouse()), "--manifest", str(manifest)])
+
+    assert rc == 2
+    assert "not a readable dbt manifest" in capsys.readouterr().err
