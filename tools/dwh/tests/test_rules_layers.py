@@ -71,3 +71,17 @@ def test_l05_chain_deeper_than_ten(lint):
     for i in range(1, 12):  # dim chain of 11 models
         previous = builder.model(f"dim_pub_c{i}", f"models/dim/pub/dim_pub_c{i}.sql", deps=[previous])
     assert lint(builder, prefix="DWH-L") == ["DWH-L05"]
+
+
+def test_l05_chain_of_exactly_ten_is_allowed(lint):
+    builder, ids = good_project()
+    previous = ids["ods_customers"]
+    for i in range(1, 11):  # dim chain of 10 models
+        previous = builder.model(f"dim_pub_c{i}", f"models/dim/pub/dim_pub_c{i}.sql", deps=[previous])
+    assert lint(builder, prefix="DWH-L") == []
+
+
+def test_l03_ods_must_read_a_source(lint):
+    builder, ids = good_project()
+    builder.node(ids["ods_orders"])["depends_on"]["nodes"] = []
+    assert lint(builder, prefix="DWH-L") == ["DWH-L03"]

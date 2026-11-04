@@ -45,7 +45,7 @@ def l03_sources_only_in_ods(ctx: Context) -> Iterator[Finding]:
         sources, refs = ctx.project.source_deps(node), ctx.project.refs(node)
         if node.layer == "ods":
             if not sources:
-                yield Finding(node.path, "DWH-L03", f"{node.name}: an ODS model reads a source()")
+                yield Finding(node.path, "DWH-L03", f"{node.name}: an ODS model must read a source()")
             for ref in refs:
                 yield Finding(node.path, "DWH-L03", f"{node.name}: an ODS model must not ref {ref.name}")
         else:

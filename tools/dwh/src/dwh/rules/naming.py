@@ -15,14 +15,16 @@ PATTERNS = {
     "dim": re.compile(r"^dim_(?P<scope>[a-z0-9]+)_(?P<dimension>[a-z0-9]+(?:_[a-z0-9]+)*?)(?P<hist>_hist)?$"),
     "dwd": re.compile(rf"^dwd_(?P<domain>[a-z0-9]+)_(?P<process>{_TOKENS})_(?P<load>di|df)$"),
     "dws": re.compile(rf"^dws_(?P<domain>[a-z0-9]+)_(?P<grain>{_TOKENS})_(?P<period>{'|'.join(PERIODS)})$"),
-    "ads": re.compile(rf"^ads_(?P<app>[a-z0-9]+)_(?P<subject>{_TOKENS})$"),
+    "ads": re.compile(
+        rf"^ads_(?P<app>[a-z0-9]+)_(?P<subject>[a-z0-9]+(?:_[a-z0-9]+)*?)(?:_(?P<period>{'|'.join(PERIODS)}))?$"
+    ),
 }
 TEMPLATES = {
     "ods": "ods_{source}_{table}_{di|df}",
     "dim": "dim_{pub|domain}_{dimension}[_hist]",
     "dwd": "dwd_{domain}_{process}_{di|df}",
     "dws": "dws_{domain}_{grain}[_{custom}]_{1d|nd|td|1w|hh|mm}",
-    "ads": "ads_{app}_{subject}",
+    "ads": "ads_{app}_{subject}[_{1d|nd|td|1w|hh|mm}]",
 }
 GLOSSARY_LAYERS = ("dim", "dwd", "dws", "ads")
 IGNORED_TOKENS = {*LAYERS, "di", "df", "pub", "hist", *PERIODS}
@@ -45,7 +47,8 @@ def unknown_tokens(name: str, words: set[str]) -> list[str]:
 
 def n01_name_pattern(ctx: Context) -> Iterator[Finding]:
     for node in ctx.project.nodes.values():
-        if node.layer and parse_name(node) is None:
+        bad_period = node.layer == "ads" and NUMERIC_PERIOD.match(node.name.rsplit("_", 1)[-1])
+        if node.layer and (parse_name(node) is None or (bad_period and not parse_name(node)["period"])):
             yield Finding(
                 node.path, "DWH-N01", f"{node.name}: {node.layer} names follow {TEMPLATES[node.layer]}"
             )

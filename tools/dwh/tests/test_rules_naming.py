@@ -68,3 +68,32 @@ def test_ods_columns_are_exempt_from_the_glossary(lint):
         "meta": {},
     }
     assert lint(builder, prefix="DWH-N") == []
+
+
+def test_ads_name_may_end_in_a_period(lint):
+    builder, ids = good_project()
+    builder.node(ids["ads_customer"])["name"] = "ads_bi_customer_1d"
+    assert lint(builder, prefix="DWH-N") == []
+
+
+def test_n01_ads_period_suffix_must_be_a_known_period(lint):
+    builder, ids = good_project()
+    builder.node(ids["ads_customer"])["name"] = "ads_bi_customer_7d"
+    assert lint(builder, prefix="DWH-N") == ["DWH-N01"]
+
+
+def test_n02_ods_folder_must_match_the_source_segment(lint):
+    builder, ids = good_project()
+    builder.node(ids["ods_orders"])["original_file_path"] = "models/ods/crm/ods_shop_orders_di.sql"
+    assert lint(builder, prefix="DWH-N") == ["DWH-N02"]
+
+
+def test_n02_ods_must_read_the_source_named_in_its_name(lint):
+    builder, ids = good_project()
+    crm = builder.source(
+        "crm",
+        "orders",
+        meta={"timezone": "Asia/Ho_Chi_Minh", "load": "df", "delete_handling": "none"},
+    )
+    builder.node(ids["ods_orders"])["depends_on"]["nodes"] = [crm]
+    assert lint(builder, prefix="DWH-N") == ["DWH-N02"]
