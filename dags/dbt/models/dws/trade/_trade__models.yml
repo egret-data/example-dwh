@@ -1,0 +1,133 @@
+version: 2
+models:
+- name: dws_trade_customer_1d
+  description: 'Daily order metrics per customer, from the order event fact. Consumers (STD-07-04): the finance dashboard''s customer view and, through the td table, the CRM customer-value export; it also
+    baselines the nd and td tables.'
+  config:
+    contract:
+      enforced: true
+    meta:
+      grain:
+      - customer_key
+    tags:
+    - domain:trade
+  columns:
+  - name: customer_key
+    description: Durable key of the customer (grain).
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_pub_customer')
+          field: customer_key
+  - name: order_amt_sum_1d
+    description: Sum of order amounts in VND for orders placed on dt.
+    data_type: decimal(38,2)
+    config:
+      meta:
+        metric: order_amt_sum_1d
+  - name: order_cnt_1d
+    description: Number of orders placed on dt.
+    data_type: bigint
+    config:
+      meta:
+        metric: order_cnt_1d
+  - name: app_order_amt_sum_1d
+    description: Sum of order amounts in VND for orders placed on dt through the app channel; null when none.
+    data_type: decimal(38,2)
+    config:
+      meta:
+        metric: app_order_amt_sum_1d
+  - name: dt
+    description: Statistical day (Asia/Ho_Chi_Minh) the metrics are computed for.
+    data_type: date
+    data_tests:
+    - not_null
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - customer_key
+        - dt
+- name: dws_trade_customer_nd
+  description: 'Order amount per customer over the last 30 days ending on dt, from the order event fact. Consumers (STD-07-04): the finance dashboard''s rolling-30-day view and the CRM retention review.'
+  config:
+    contract:
+      enforced: true
+    meta:
+      grain:
+      - customer_key
+    tags:
+    - domain:trade
+  columns:
+  - name: customer_key
+    description: Durable key of the customer (grain).
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_pub_customer')
+          field: customer_key
+  - name: order_amt_sum_30d
+    description: Sum of order amounts in VND for orders placed in the 30 days ending on dt.
+    data_type: decimal(38,2)
+    config:
+      meta:
+        metric: order_amt_sum_30d
+  - name: dt
+    description: Statistical day (Asia/Ho_Chi_Minh) the metrics are computed for.
+    data_type: date
+    data_tests:
+    - not_null
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - customer_key
+        - dt
+- name: dws_trade_customer_td
+  description: 'Order amount and order count per customer over all history up to dt, from the order event fact. Consumers (STD-07-04): the ADS ads_crm_customer_value and the finance dashboard''s lifetime
+    view.'
+  config:
+    contract:
+      enforced: true
+    meta:
+      grain:
+      - customer_key
+    tags:
+    - domain:trade
+  columns:
+  - name: customer_key
+    description: Durable key of the customer (grain).
+    data_type: varchar
+    data_tests:
+    - not_null
+    - relationships:
+        arguments:
+          to: ref('dim_pub_customer')
+          field: customer_key
+  - name: order_amt_sum_td
+    description: Sum of order amounts in VND for all orders placed up to dt.
+    data_type: decimal(38,2)
+    config:
+      meta:
+        metric: order_amt_sum_td
+  - name: order_cnt_td
+    description: Number of orders placed up to dt.
+    data_type: bigint
+    config:
+      meta:
+        metric: order_cnt_td
+  - name: dt
+    description: Statistical day (Asia/Ho_Chi_Minh) the metrics are computed for.
+    data_type: date
+    data_tests:
+    - not_null
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - customer_key
+        - dt

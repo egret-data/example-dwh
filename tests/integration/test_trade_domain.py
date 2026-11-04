@@ -162,3 +162,77 @@ def test_rerunning_an_old_day_alone_does_not_regress_later_payments():
         f"SELECT is_paid, pay_amt, dt FROM {table('dwd', 'dwd_trade_order_lifecycle_di')} WHERE order_id = 2"
     )
     assert [(r[0], int(r[1]), r[2].isoformat()) for r in rows] == [(True, 80000, "2026-11-01")]
+
+
+def dws(name: str, columns: str, dt: str) -> list:
+    return query(
+        f"SELECT d.customer_id, {columns} FROM {table('dws', name)} s "
+        f"JOIN {table('dim', 'dim_pub_customer')} d ON d.customer_key = s.customer_key "
+        f"WHERE s.dt = DATE '{dt}' ORDER BY d.customer_id"
+    )
+
+
+def ints(rows):
+    return [tuple(None if v is None else int(v) for v in r) for r in rows]
+
+
+def test_dws_1d():
+    cols = "order_amt_sum_1d, order_cnt_1d, app_order_amt_sum_1d"
+    assert ints(dws("dws_trade_customer_1d", cols, "2026-11-01")) == [
+        (101, 120000, 1, 120000),
+        (102, 80000, 1, None),
+    ]
+    assert ints(dws("dws_trade_customer_1d", cols, "2026-11-02")) == [
+        (101, 40000, 1, None),
+        (103, 250000, 1, 250000),
+    ]
+    assert ints(dws("dws_trade_customer_1d", cols, "2026-11-03")) == [
+        (102, 99000, 1, 99000),
+        (103, 15000, 1, 15000),
+    ]
+
+
+def test_dws_nd_and_td_on_the_last_day():
+    assert ints(dws("dws_trade_customer_nd", "order_amt_sum_30d", "2026-11-03")) == [
+        (101, 160000),
+        (102, 179000),
+        (103, 265000),
+    ]
+    assert ints(dws("dws_trade_customer_td", "order_amt_sum_td, order_cnt_td", "2026-11-03")) == [
+        (101, 160000, 2),
+        (102, 179000, 2),
+        (103, 265000, 2),
+    ]
+
+
+def test_ads_customer_value():
+    rows = query(
+        f"SELECT d.customer_id, a.avg_order_amt_td FROM {table('ads', 'ads_crm_customer_value')} a "
+        f"JOIN {table('dim', 'dim_pub_customer')} d ON d.customer_key = a.customer_key "
+        "WHERE a.dt = DATE '2026-11-03' ORDER BY 1"
+    )
+    assert [(r[0], float(r[1])) for r in rows] == [(101, 80000.0), (102, 89500.0), (103, 132500.0)]
+
+
+def test_reconciliation_dwd_to_dws_and_payments_to_source():
+    dwd = query(
+        f"SELECT dt, sum(order_amt) FROM {table('dwd', 'dwd_trade_order_di')} GROUP BY dt ORDER BY dt"
+    )
+    dws_1d = query(
+        f"SELECT dt, sum(order_amt_sum_1d) FROM {table('dws', 'dws_trade_customer_1d')} "
+        "GROUP BY dt ORDER BY dt"
+    )
+    assert [(r[0], int(r[1])) for r in dwd] == [(r[0], int(r[1])) for r in dws_1d]
+    assert [int(r[1]) for r in dwd] == [200000, 290000, 114000]
+    paid = query(f"SELECT sum(pay_amt) FROM {table('dwd', 'dwd_trade_payment_di')}")[0][0]
+    source = query("SELECT sum(amount) FROM shop.public.payments")[0][0]
+    assert int(paid) == int(source) == 549000
+
+
+def test_rerunning_the_last_day_is_idempotent():
+    before = query(f"SELECT count(*), sum(order_amt_sum_td) FROM {table('dws', 'dws_trade_customer_td')}")
+    run_day(DAYS[2])
+    assert (
+        query(f"SELECT count(*), sum(order_amt_sum_td) FROM {table('dws', 'dws_trade_customer_td')}")
+        == before
+    )
