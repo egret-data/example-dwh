@@ -1,0 +1,13 @@
+# Eval fixture: a small trade domain (orders, shipments) copied from tools/dwh/tests/fixtures.
+bus_matrix:
+- process: order
+  dimensions:
+  - dimension: date
+    role: order_date
+  - dimension: customer
+  - dimension: shop
+- process: shipment
+  dimensions:
+  - dimension: date
+    role: ship_date
+  - dimension: customer

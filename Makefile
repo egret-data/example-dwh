@@ -2,7 +2,7 @@ COMPOSE := docker compose -f dev/compose.yml
 DWH := uv run --locked --project tools/dwh dwh
 RUN := $(COMPOSE) run --rm airflow
 
-.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards sql-lint sync-agents sync-agents-check pre-commit-install pre-commit
+.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards sql-lint sync-agents sync-agents-check pre-commit-install pre-commit eval
 
 dev-up:
 	$(COMPOSE) up -d trino
@@ -86,3 +86,6 @@ pre-commit-install:
 
 pre-commit:
 	uvx pre-commit@4.7.0 run --all-files
+
+eval:
+	./evals/run.sh $(SCENARIO) $(if $(REF),--ref $(REF))

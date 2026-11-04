@@ -1,0 +1,46 @@
+# Eval fixture: a small trade domain (orders, shipments) copied from tools/dwh/tests/fixtures.
+atomic:
+- name: order_amt
+  process: order
+  description: Order amount.
+  aggregation: sum
+  additivity: additive
+- name: order
+  process: order
+  description: Orders.
+  aggregation: count
+  additivity: additive
+- name: order_buyer
+  process: order
+  description: Distinct buyers.
+  aggregation: count_distinct
+  additivity: non_additive
+derived:
+- name: order_amt_sum_1d
+  atomic: order_amt
+  period: 1d
+  grain:
+  - customer
+  description: Order amount per customer per day.
+- name: app_order_amt_sum_30d
+  atomic: order_amt
+  period: nd
+  days: 30
+  modifiers:
+  - app
+  grain:
+  - customer
+  description: App order amount per customer, last 30 days.
+- name: order_cnt_1d
+  atomic: order
+  period: 1d
+  grain:
+  - customer
+  description: Orders per customer per day.
+calculated:
+- name: avg_order_amt_1d
+  formula: order_amt_sum_1d / order_cnt_1d
+  inputs:
+  - order_amt_sum_1d
+  - order_cnt_1d
+  description: Average order amount per customer per day.

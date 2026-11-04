@@ -13,3 +13,4 @@ logs/
 .user.yml
 .dbt/
 site/
+evals/results/

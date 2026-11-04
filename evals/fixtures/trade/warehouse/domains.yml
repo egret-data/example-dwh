@@ -1,0 +1,5 @@
+# Eval fixture: a small trade domain (orders, shipments) copied from tools/dwh/tests/fixtures.
+domains:
+- name: trade
+  description: Orders and shipments.
+  owner: data-eng
