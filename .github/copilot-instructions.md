@@ -93,6 +93,9 @@ Before any data change, open `skills/dwh-start/SKILL.md` and follow it. Then fol
 
 Open the matching skill file before doing that kind of work:
 
+- `skills/dwh-implement/SKILL.md`: Use when a design is approved or a reuse change is agreed, and dbt models, snapshots, tests or DAGs must be written or changed
 - `skills/dwh-model-design/SKILL.md`: Use when a design record exists or a reuse change is agreed, and warehouse/*.yml and the table specifications must be updated before any SQL is written
 - `skills/dwh-requirement/SKILL.md`: Use when a data change is classified model-extending, or when the business process, grain, dimensions or metrics behind a request are not yet explicit
+- `skills/dwh-review/SKILL.md`: Use when reviewing a data PR or a model - your own before asking for review, or someone else's - for grain, layer, naming, metrics, history and Trino cost
 - `skills/dwh-start/SKILL.md`: Use when asked for any change to warehouse data - a new table, metric, column, source, report dataset, fix, backfill or DAG change - before reading SQL or writing code, including requests marked urgent or "just write the SQL"
+- `skills/dwh-verify/SKILL.md`: Use when dbt models or DAGs have been written or changed, before saying the change is done, opening or updating a PR, or reporting numbers to anyone
