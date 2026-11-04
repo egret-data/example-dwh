@@ -36,3 +36,12 @@ models:
       +schema: ads
       +materialized: table
       +tags: ["layer:ads"]
+
+# SCD4 `_hist` tables come from snapshots and belong to the DIM layer.
+snapshots:
+  example_dwh:
+    +schema: dim
+
+seeds:
+  example_dwh:
+    +schema: ods

@@ -25,6 +25,9 @@ config:
 env:
   - name: DBT_TARGET
     value: prod
+  # Schema for nodes without a custom schema; layer folders land in ods, dim, ... under prod.
+  - name: DBT_SCHEMA
+    value: dwh
   - name: TRINO_HOST
     value: trino.trino.svc.cluster.local
   - name: TRINO_PORT
