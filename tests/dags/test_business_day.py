@@ -95,3 +95,75 @@ def test_asset_template_renders_the_earliest_day_whatever_the_event_order():
 
     assert render_asset_template([nov2, nov1]) == "2026-11-01"
     assert render_asset_template([nov1, nov2]) == "2026-11-01"
+
+
+def sdk_event(source_dag_id, interval_start, conf=None, run_id="run"):
+    """A real SDK triggering event whose source run is a real SDK DagRun (as fetched from the supervisor)."""
+    from airflow.sdk.api.datamodels._generated import (
+        AssetReferenceAssetEventDagRun,
+        DagRun,
+        DagRunState,
+        DagRunType,
+    )
+    from airflow.sdk.execution_time.comms import AssetEventDagRunReferenceResult
+
+    event = AssetEventDagRunReferenceResult(
+        asset=AssetReferenceAssetEventDagRun(name="a", uri="trino://t:8080/iceberg/dev_ods/x", extra={}),
+        extra={},
+        source_task_id="t",
+        source_dag_id=source_dag_id,
+        source_run_id=run_id,
+        source_map_index=-1,
+        source_aliases=[],
+        timestamp=interval_start,
+    )
+    run = DagRun(
+        dag_id=source_dag_id,
+        run_id=run_id,
+        logical_date=interval_start,
+        data_interval_start=interval_start,
+        data_interval_end=interval_start,
+        run_after=interval_start,
+        start_date=interval_start,
+        end_date=None,
+        run_type=DagRunType.MANUAL if conf else DagRunType.SCHEDULED,
+        state=DagRunState.SUCCESS,
+        consumed_asset_events=[],
+        partition_key=None,
+        conf=conf,
+    )
+    event.__dict__["source_dag_run"] = run  # what the cached_property would fetch from the supervisor
+    return event
+
+
+NOV2_RUN = datetime(2026, 11, 1, 17, 0, tzinfo=UTC)  # 00:00 VN of 2026-11-02: a scheduled ODS run for 11-02
+
+
+def test_asset_template_takes_a_manual_ods_runs_conf_dt():
+    manual_ods = sdk_event("dbt_ods_shop", datetime(2026, 11, 5, 3, 0, tzinfo=UTC), conf={"dt": "2026-10-20"})
+
+    assert render_asset_template([manual_ods]) == "2026-10-20"
+
+
+def test_asset_template_prefers_the_earliest_ods_conf_dt_over_an_interval_day():
+    scheduled = sdk_event("dbt_ods_shop", NOV2_RUN, run_id="s")
+    oct21 = sdk_event("dbt_ods_shop", NOV2_RUN, conf={"dt": "2026-10-21"}, run_id="m1")
+    oct20 = sdk_event("dbt_ods_shop", NOV2_RUN, conf={"dt": "2026-10-20"}, run_id="m2")
+
+    assert render_asset_template([scheduled, oct21, oct20]) == "2026-10-20"
+
+
+def test_asset_template_ignores_a_manual_dbt_pub_runs_conf_dt():
+    # dbt_trade's AND schedule keeps a manual dbt_pub run's events queued until the next night's ODS events.
+    # The night's run must build the ODS day, not the old day of that manual dbt_pub run.
+    manual_pub = sdk_event("dbt_pub", datetime(2026, 11, 1, 3, 0, tzinfo=UTC), conf={"dt": "2026-10-01"})
+    scheduled_ods = sdk_event("dbt_ods_shop", NOV2_RUN)
+
+    assert render_asset_template([manual_pub, scheduled_ods]) == "2026-11-02"
+    assert render_asset_template([manual_pub]) == ""
+
+
+def test_asset_template_own_conf_dt_beats_a_producer_conf_dt():
+    manual_ods = sdk_event("dbt_ods_shop", NOV2_RUN, conf={"dt": "2026-10-20"})
+
+    assert render_asset_template([manual_ods], conf={"dt": "2026-10-25"}) == "2026-10-25"

@@ -10,14 +10,15 @@ description: Use when past dt partitions must be rebuilt - after a logic fix, la
 1. **Scope.** List the affected models (`dbt ls --select <model>+`) and the dt range. Estimate rows and Trino cost
    from the performance baseline.
 2. **Dry run.** Build one dt on dev and compare its counts with prod.
-3. **Run in order.** Start with the oldest dt and run one dt at a time (`dbt build --vars "{dt: ...}"` in a loop,
-   or `airflow backfill create --dag-id <dag> --from-date <d> --to-date <d> --max-active-runs 1`). Each run replaces
-   its own partition, so re-running a DWD, DWS or ADS dt is safe. Re-running a past ODS dt is not always safe: see
-   the red flags.
-   - In Airflow, `dbt_pub` and `dbt_trade` are asset-triggered and take `dt` from the producer ODS run's data
-     interval, so a `conf.dt` on a manual ODS run does not reach them. To rebuild a past day, trigger `dbt_pub` and
-     then `dbt_trade` manually with `conf.dt` (`airflow dags trigger dbt_trade --conf '{"dt": "<dt>"}'`), one day
-     at a time, oldest first.
+3. **Run in order.** Start with the oldest dt and run one dt at a time. Each run replaces its own partition, so
+   re-running a DWD, DWS or ADS dt is safe. Re-running a past ODS dt is not always safe: see the red flags.
+   - **Transform DAGs (`dbt_pub`, `dbt_trade`) are asset-triggered.** Trigger them by hand with `conf.dt`, one day
+     at a time, oldest first, and wait for each run to succeed: `airflow dags trigger dbt_pub --conf '{"dt": "<dt>"}'`,
+     then the same for `dbt_trade`. A manual `dbt_pub` run does not set `dbt_trade`'s day: `dbt_trade` takes `dt`
+     only from `dbt_ods_*` runs (their `conf.dt`, else their interval day), so trigger `dbt_trade` yourself.
+   - **Cron-scheduled DAGs (`dbt_ods_*`)** only:
+     `airflow backfill create --dag-id <dag> --from-date <d> --to-date <d> --max-active-runs 1`.
+   - **Without Airflow:** `dbt build --select <model>+ --vars "{dt: <dt>}"` in a loop, oldest dt first.
 4. **Rebuild windowed DWS to today.** `nd` and `td` DWS tables must be rebuilt for every dt from the earliest
    changed dt to today, because a `td` value depends on every earlier day.
 5. **Leave history alone.** Re-running snapshots does not rebuild `dim_*_hist`. Rebuild history only with an

@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """Grade one eval answer against its scenario with an LLM judge.
 
-    evals/grade.py <scenario.md> <answer.md>
+    evals/grade.py <scenario.md> <answer.md> [--samples N]
 
 Writes <answer>.grade.json next to the answer (``x.md`` -> ``x.grade.json``):
-``{"pass": [{criterion, met, evidence}], "fail": [{criterion, hit, evidence}], "passed": bool}``.
-``passed`` is computed here, not by the judge: every Pass criterion met and no Fail criterion hit.
+``{"pass": [{criterion, met, evidence, votes}], "fail": [{criterion, hit, evidence, votes}], "samples": N,
+"passed": bool}``.
+The judge is asked N times (``--samples``, default 3, env ``DWH_EVAL_SAMPLES``); each criterion is decided by
+strict majority and its votes are recorded. ``passed`` is computed here from the majority, not by the judge:
+every Pass criterion met and no Fail criterion hit.
 
 The judge is ``claude -p`` (sonnet) in an empty temp dir with no tools and no settings, so it sees
 neither this repository nor its instruction files. ``DWH_EVAL_JUDGE`` overrides the judge command (tests
 use a fake one); the prompt goes to its stdin.
 """
 
+import argparse
 import json
 import os
 import re
@@ -138,13 +142,49 @@ def entries(verdict: dict, key: str, flag: str, criteria: list[str]) -> list[dic
     given = verdict.get(key)
     if not isinstance(given, list) or len(given) != len(criteria):
         raise ValueError(f"judge gave {key!r} for {len(given or [])} of {len(criteria)} criteria")
+    if not all(isinstance(entry, dict) for entry in given):
+        raise ValueError(f"judge gave a non-object entry in {key!r}")
     return [
         {"criterion": criterion, flag: entry.get(flag) is True, "evidence": str(entry.get("evidence", ""))}
         for criterion, entry in zip(criteria, given, strict=True)
     ]
 
 
-def grade(scenario: Path, answer: Path) -> dict:
+def judge_once(prompt: str, parsed: dict) -> dict:
+    """One judge sample. A malformed verdict (non-zero exit, no JSON, wrong criterion count, a non-object
+    entry) is retried once; a second failure raises."""
+    for attempt in (1, 2):
+        try:
+            verdict = parse_verdict(ask_judge(prompt))
+            return {
+                "pass": entries(verdict, "pass", "met", parsed["pass"]),
+                "fail": entries(verdict, "fail", "hit", parsed["fail"]),
+            }
+        except (ValueError, RuntimeError):
+            if attempt == 2:
+                raise
+    raise AssertionError("unreachable")
+
+
+def majority(samples: list[dict], key: str, flag: str) -> list[dict]:
+    """Decide each criterion by strict majority of the samples; keep every vote and one agreeing evidence."""
+    decided = []
+    for i, first in enumerate(samples[0][key]):
+        votes = [sample[key][i][flag] for sample in samples]
+        value = sum(votes) * 2 > len(votes)
+        evidence = next(s[key][i]["evidence"] for s in samples if s[key][i][flag] == value)
+        decided.append({"criterion": first["criterion"], flag: value, "evidence": evidence, "votes": votes})
+    return decided
+
+
+def default_samples() -> int:
+    return int(os.environ.get("DWH_EVAL_SAMPLES", "3"))
+
+
+def grade(scenario: Path, answer: Path, samples: int | None = None) -> dict:
+    samples = samples or default_samples()
+    if samples < 1:
+        raise ValueError("samples must be at least 1")
     parsed = sections(Path(scenario).read_text())
     answer = Path(answer)
     prompt = PROMPT.format(
@@ -153,14 +193,11 @@ def grade(scenario: Path, answer: Path) -> dict:
         fail_list="\n".join(f"{i}. {c}" for i, c in enumerate(parsed["fail"], 1)),
         answer=answer.read_text().strip(),
     )
-    try:
-        verdict = parse_verdict(ask_judge(prompt))
-    except ValueError:
-        # The judge occasionally emits malformed JSON; one retry, then fail loudly.
-        verdict = parse_verdict(ask_judge(prompt))
+    votes = [judge_once(prompt, parsed) for _ in range(samples)]
     result = {
-        "pass": entries(verdict, "pass", "met", parsed["pass"]),
-        "fail": entries(verdict, "fail", "hit", parsed["fail"]),
+        "pass": majority(votes, "pass", "met"),
+        "fail": majority(votes, "fail", "hit"),
+        "samples": samples,
     }
     result["passed"] = all(e["met"] for e in result["pass"]) and not any(e["hit"] for e in result["fail"])
     answer.with_suffix(".grade.json").write_text(json.dumps(result, indent=2) + "\n")
@@ -168,15 +205,22 @@ def grade(scenario: Path, answer: Path) -> dict:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
-        print("usage: evals/grade.py <scenario.md> <answer.md>", file=sys.stderr)
-        return 2
-    result = grade(Path(argv[0]), Path(argv[1]))
+    parser = argparse.ArgumentParser(description="Grade one eval answer with an LLM judge.")
+    parser.add_argument("scenario", type=Path)
+    parser.add_argument("answer", type=Path)
+    parser.add_argument(
+        "--samples",
+        type=int,
+        default=default_samples(),
+        help="judge calls per answer, decided by majority (default 3, env DWH_EVAL_SAMPLES)",
+    )
+    args = parser.parse_args(argv)
+    result = grade(args.scenario, args.answer, args.samples)
     met = sum(e["met"] for e in result["pass"])
     hit = sum(e["hit"] for e in result["fail"])
     print(
-        f"{argv[1]}: pass {met}/{len(result['pass'])}, fail hit {hit}/{len(result['fail'])}: "
-        f"{'PASS' if result['passed'] else 'FAIL'}"
+        f"{args.answer}: pass {met}/{len(result['pass'])}, fail hit {hit}/{len(result['fail'])}: "
+        f"{'PASS' if result['passed'] else 'FAIL'} (majority of {args.samples})"
     )
     return 0
 

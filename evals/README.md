@@ -4,7 +4,7 @@ Headless scenarios that check whether the process skills change an agent's behav
 
 ```bash
 ./evals/run.sh <scenario> [--ref <git-ref>] [--model <model>] [--without-skills] [--tool claude]
-./evals/grade.py evals/scenarios/<scenario>.md evals/results/<answer>.md
+./evals/grade.py evals/scenarios/<scenario>.md evals/results/<answer>.md [--samples N]
 ./evals/summary.py <sha>
 make eval SCENARIO=<name> [REF=<ref>] [WITHOUT_SKILLS=1]
 make eval-all
@@ -20,10 +20,13 @@ make eval-all
 - `grade.py` asks an LLM judge (`claude -p --model sonnet`) to grade the answer against the scenario's bullets and
   writes `<answer>.grade.json`. The judge runs in an empty temp dir with `--setting-sources ''`, `--tools ''`,
   `--strict-mcp-config` and `--disable-slash-commands`, so it loads no instruction files, settings, hooks or MCP
-  servers and sees only the prompt. `passed` is true when every Pass criterion is met and no Fail criterion is hit.
-  `DWH_EVAL_JUDGE` overrides the judge command (the tests use a fake judge).
-- `summary.py <sha>` writes `results/summary-<sha>.md`: per scenario, the criteria met with and without skills, and
+  servers and sees only the prompt. The judge is asked `--samples` times (default 3, env `DWH_EVAL_SAMPLES`), and
+  each criterion is decided by strict majority; the `.grade.json` records every vote. `passed` is true when every
+  Pass criterion is met and no Fail criterion is hit, by majority. A malformed verdict (non-zero exit, no JSON,
+  wrong criterion count, a non-object entry) is retried once. `DWH_EVAL_JUDGE` overrides the judge command (the
+  tests use a fake judge).
+- `summary.py <sha>` writes `results/summary-<sha>.md`: per scenario and model, the criteria met with and without skills, and
   whether the scenario discriminates (passes with skills, fails without).
 - `make eval-all` (`run-all.sh`) runs every scenario both ways at `HEAD`, grades and summarises. Each agent run and
-  each judge call is a paid `claude -p` call: 2 runs and 2 judge calls per scenario.
+  each judge call is a paid `claude -p` call: 2 runs and 6 judge calls per scenario.
 - Answers, grades and summaries go to `results/` (git-ignored).

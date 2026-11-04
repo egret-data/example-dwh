@@ -127,6 +127,79 @@ def test_grade_rejects_a_verdict_that_skips_a_criterion(tmp_path, monkeypatch):
         grade.grade(scenario, answer)
 
 
+def sequence_judge(tmp_path: Path, outputs: list[str]) -> str:
+    """A fake judge that prints outputs[n] on its n-th call; an output of "EXIT" exits 1 instead."""
+    script = tmp_path / "judge.py"
+    state = tmp_path / "calls"
+    (tmp_path / "outputs.json").write_text(json.dumps(outputs))
+    script.write_text(
+        "import json, pathlib, sys\n"
+        f"state = pathlib.Path({str(state)!r})\n"
+        "n = int(state.read_text()) if state.exists() else 0\n"
+        "state.write_text(str(n + 1))\n"
+        f"out = json.loads(pathlib.Path({str(tmp_path / 'outputs.json')!r}).read_text())[n]\n"
+        "sys.exit(1) if out == 'EXIT' else print(out)\n"
+    )
+    return f"{sys.executable} {script}"
+
+
+def verdict_json(met: list[bool], hit: list[bool]) -> str:
+    return json.dumps(
+        {
+            "pass": [{"criterion": "c", "met": m, "evidence": f"e{i}"} for i, m in enumerate(met)],
+            "fail": [{"criterion": "c", "hit": h, "evidence": "e"} for h in hit],
+        }
+    )
+
+
+def test_grade_decides_each_criterion_by_majority_of_three_samples(tmp_path, monkeypatch):
+    scenario = write_scenario(tmp_path)
+    answer = tmp_path / "demo-abc1234-sonnet.md"
+    answer.write_text("anything")
+    outputs = [
+        verdict_json([True, False], [True]),
+        verdict_json([True, True], [False]),
+        verdict_json([False, True], [False]),
+    ]
+    monkeypatch.setenv("DWH_EVAL_JUDGE", sequence_judge(tmp_path, outputs))
+
+    result = grade.grade(scenario, answer, samples=3)
+
+    assert [e["met"] for e in result["pass"]] == [True, True]
+    assert [e["votes"] for e in result["pass"]] == [[True, True, False], [False, True, True]]
+    assert result["fail"][0]["hit"] is False
+    assert result["fail"][0]["votes"] == [True, False, False]
+    assert result["samples"] == 3
+    assert result["passed"] is True
+
+
+@pytest.mark.parametrize(
+    "bad",
+    ["EXIT", "no json here", verdict_json([True], [False]), json.dumps({"pass": ["x", "y"], "fail": ["z"]})],
+    ids=["non-zero-exit", "no-json", "wrong-count", "non-object-entry"],
+)
+def test_grade_retries_a_malformed_verdict_once(tmp_path, monkeypatch, bad):
+    scenario = write_scenario(tmp_path)
+    answer = tmp_path / "demo-abc1234-sonnet.md"
+    answer.write_text("anything")
+    monkeypatch.setenv("DWH_EVAL_JUDGE", sequence_judge(tmp_path, [bad, verdict_json([True, True], [False])]))
+
+    result = grade.grade(scenario, answer, samples=1)
+
+    assert result["passed"] is True
+    assert (tmp_path / "calls").read_text() == "2"
+
+
+def test_grade_fails_after_two_malformed_verdicts(tmp_path, monkeypatch):
+    scenario = write_scenario(tmp_path)
+    answer = tmp_path / "demo-abc1234-sonnet.md"
+    answer.write_text("anything")
+    monkeypatch.setenv("DWH_EVAL_JUDGE", sequence_judge(tmp_path, ["no json", "still none"]))
+
+    with pytest.raises(ValueError):
+        grade.grade(scenario, answer, samples=1)
+
+
 def write_grade(path: Path, met: list[bool], hit: list[bool]) -> None:
     result = {
         "pass": [{"criterion": f"p{i}", "met": m, "evidence": ""} for i, m in enumerate(met)],
@@ -145,10 +218,20 @@ def test_build_table_marks_discrimination(tmp_path):
     rows = summary.rows(tmp_path, "abc1234")
     table = summary.build_table(rows)
 
-    assert rows["demo"]["discriminates"] is True
-    assert rows["flat"]["discriminates"] is False
-    assert "| demo | pass 2/2, fail 0/1: PASS | pass 1/2, fail 1/1: FAIL | yes |" in table
-    assert "| flat | pass 1/1, fail 0/1: PASS | pass 1/1, fail 0/1: PASS | no |" in table
+    assert rows[("demo", "sonnet")]["discriminates"] is True
+    assert rows[("flat", "sonnet")]["discriminates"] is False
+    assert "| demo | sonnet | pass 2/2, fail 0/1: PASS | pass 1/2, fail 1/1: FAIL | yes |" in table
+    assert "| flat | sonnet | pass 1/1, fail 0/1: PASS | pass 1/1, fail 0/1: PASS | no |" in table
+
+
+def test_rows_keep_two_models_of_one_sha_apart(tmp_path):
+    write_grade(tmp_path / "demo-abc1234-sonnet.grade.json", [True], [False])
+    write_grade(tmp_path / "demo-abc1234-haiku.grade.json", [False], [False])
+
+    rows = summary.rows(tmp_path, "abc1234")
+
+    assert rows[("demo", "sonnet")]["with"]["passed"] is True
+    assert rows[("demo", "haiku")]["with"]["passed"] is False
 
 
 def test_run_sh_accepts_only_the_claude_tool():
