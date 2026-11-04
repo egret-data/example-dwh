@@ -88,8 +88,7 @@ $members
 """
 )
 DWD_SQL = Template(
-    """$config
--- Process $process. Grain: $grain_sentence
+    """$config${depends}-- Process $process. Grain: $grain_sentence
 -- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. ship_date).
 ${joins}select
 $columns
@@ -98,8 +97,7 @@ where dt = date '{{ get_dt() }}'
 """
 )
 DWD_EVENT_SQL = Template(
-    """$config
--- Process $process. Grain: $grain_sentence
+    """$config${depends}-- Process $process. Grain: $grain_sentence
 -- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. ship_date;
 -- a single date role is derived from the event column).
 -- Event fact (STD-05-08): dt is the Vietnam day of $event_at. A run reads every ODS partition from dt on
@@ -124,8 +122,8 @@ ACCUMULATING_REFUSAL = (
     "(STD-05-08, STD-08-05)"
 )
 DWS_SQL = Template(
-    """$config
--- One statistical period per table ($period); metric columns follow warehouse/metrics.yml.
+    """$config${depends}-- One statistical period per table ($period); metric columns follow
+-- warehouse/metrics.yml.
 select
 $columns
 from {{ ref('$upstream') }}
@@ -227,6 +225,15 @@ def select_list(items: list[tuple[str, str | None]], *, align: bool = True, inde
 
 def dim_model(dimension: dict) -> str:
     return f"dim_{dimension['scope']}_{dimension['name']}"
+
+
+def depends_on(dimension_models) -> str:
+    """`-- depends_on` lines for the dimensions a model's relationships tests point to.
+
+    Without a ref() the dimension is not an ancestor of the model, so `dbt test --indirect-selection
+    buildable` silently drops those tests and lineage misses the edge.
+    """
+    return "".join(f"-- depends_on: {{{{ ref('{model}') }}}}\n" for model in sorted(set(dimension_models)))
 
 
 def key_dimensions(wh: Warehouse) -> dict[str, dict]:
@@ -444,6 +451,7 @@ def _dwd(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
         versions = select_list([*[(c, None) for c in listed], (rank, "version_rank")], indent="        ")
     sql = template.substitute(
         config=PARTITION_CONFIG,
+        depends=depends_on(dim_model(dimension) for dimension in keys.values()),
         process=process_name,
         grain_sentence=process["grain"],
         joins="".join(f"-- joins {{{{ ref('{model}') }}}}\n" for model in upstream[1:]),
@@ -528,6 +536,9 @@ def _dws(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
         )
     sql = DWS_SQL.substitute(
         config=PARTITION_CONFIG,
+        depends=depends_on(
+            dim_model(dims[g.removesuffix("_key")]) for g in grain if g.removesuffix("_key") in dims
+        ),
         period=period,
         window=table_window(period, widest),
         columns=select_list([*select, (TODAY, "dt")], align=False),

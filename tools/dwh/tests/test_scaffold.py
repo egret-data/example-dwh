@@ -515,3 +515,33 @@ def test_cli_scaffold_prints_writes_and_rejects(make_warehouse, capsys, tmp_path
     assert "--event-at is required" in capsys.readouterr().err
     assert main([*dwd, "--event-at", "created_at", "--warehouse", warehouse]) == 0
     assert "in_business_day_tz('created_at')" in capsys.readouterr().out
+
+
+def depends_on_lines(sql: str) -> list[str]:
+    return [line for line in sql.splitlines() if line.startswith("-- depends_on:")]
+
+
+def test_dwd_declares_every_dimension_its_relationships_tests_point_to(wh):
+    # Without a ref() the dimension is no ancestor, so `--indirect-selection buildable` drops the tests.
+    sql = scaffold(
+        "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="created_at"
+    )["models/dwd/trade/dwd_trade_order_di.sql"]
+
+    assert depends_on_lines(sql) == [
+        "-- depends_on: {{ ref('dim_pub_customer') }}",
+        "-- depends_on: {{ ref('dim_pub_date') }}",
+        "-- depends_on: {{ ref('dim_trade_shop') }}",
+    ]
+
+
+def test_dws_declares_the_dimensions_of_its_grain_keys(wh):
+    sql = scaffold(
+        "dws_trade_customer_1d",
+        wh,
+        project_dir="",
+        grain=["customer_key"],
+        upstream=["dwd_trade_order_di"],
+        metrics=["order_amt_sum_1d"],
+    )["models/dws/trade/dws_trade_customer_1d.sql"]
+
+    assert depends_on_lines(sql) == ["-- depends_on: {{ ref('dim_pub_customer') }}"]
