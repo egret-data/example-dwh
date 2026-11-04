@@ -48,3 +48,22 @@ def test_cli_catalog_refuses_invalid_yaml(make_warehouse, tmp_path, capsys):
 
     assert rc == 1
     assert "DWH-Y01" in capsys.readouterr().out
+
+
+def test_cli_catalog_missing_dbt_docs_exits_2(make_warehouse, tmp_path, capsys):
+    missing = tmp_path / "static_index.html"
+
+    rc = main(
+        [
+            "catalog",
+            "--warehouse",
+            str(make_warehouse()),
+            "--out",
+            str(tmp_path / "site"),
+            "--dbt-docs",
+            str(missing),
+        ]
+    )
+
+    assert rc == 2
+    assert f"dwh: {missing} not found; run `make catalog`" in capsys.readouterr().err

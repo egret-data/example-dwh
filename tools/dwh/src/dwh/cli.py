@@ -34,7 +34,7 @@ def cmd_lint(args: argparse.Namespace) -> int:
         print(f"dwh: {args.manifest} not found; run `make manifest` first", file=sys.stderr)
         return 2
     try:
-        project = load_manifest(args.manifest)
+        project = load_manifest(args.manifest, args.project_dir)
     except (ValueError, KeyError, TypeError, AttributeError) as error:
         print(
             f"dwh: {args.manifest} is not a readable dbt manifest ({error!r}); run `make manifest`",
@@ -51,6 +51,9 @@ def cmd_catalog(args: argparse.Namespace) -> int:
     findings = validate(args.warehouse)
     if findings:
         return report(findings)
+    if args.dbt_docs is not None and not args.dbt_docs.is_file():
+        print(f"dwh: {args.dbt_docs} not found; run `make catalog`", file=sys.stderr)
+        return 2
     index = write_catalog(load_warehouse(args.warehouse), args.out, args.dbt_docs)
     print(f"wrote {index}")
     return 0
@@ -86,6 +89,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("lint", help="lint the dbt project against the warehouse design")
     p.add_argument("--warehouse", type=Path, default=Path("warehouse"))
     p.add_argument("--manifest", type=Path, default=Path(".dbt/target/manifest.json"))
+    p.add_argument(
+        "--project-dir", default="dags/dbt", help="dbt project directory, prefixed onto reported paths"
+    )
     p.add_argument("--select", nargs="*", default=[], help="only report codes starting with these prefixes")
     p.set_defaults(func=cmd_lint)
 
