@@ -239,9 +239,9 @@ Source: Kimball (late-arriving facts) · Spec §7
 ### STD-08-08 Retention (MUST)
 
 Each layer keeps its default retention: ODS 400 days, DWD 3 years, DIM and its `_hist` tables forever, DWS 3 years,
-ADS 400 days. A model overrides the default with `config.meta.retention_days`. The rule applies now; the maintenance
-DAG that deletes older `dt` partitions, reads `retention_days` and runs the Iceberg cleanup of STD-08-09 arrives with
-plan 4.
+ADS 400 days. A model overrides the default with `config.meta.retention_days`. The weekly `iceberg_maintenance`
+DAG (macro `iceberg_maintenance`) deletes older `dt` partitions of ODS, DWD, DWS and ADS models and runs the Iceberg
+cleanup of STD-08-09.
 
 Correct:
 
@@ -267,8 +267,8 @@ Source: Alibaba dim-layer · Spec §4
 
 Compact small files, expire snapshots and remove orphan files on a schedule. Deleting partitions or rows frees no
 storage until snapshots expire. Many small files slow every query, so file count and size belong in the performance
-baseline (STD-12-05). Use the Trino table procedures. The scheduled job arrives with plan 4, together with the
-retention DAG of STD-08-08; until then run them by hand.
+baseline (STD-12-05). Use the Trino table procedures. The weekly `iceberg_maintenance` DAG runs them together
+with the retention deletes of STD-08-08.
 
 Correct:
 
