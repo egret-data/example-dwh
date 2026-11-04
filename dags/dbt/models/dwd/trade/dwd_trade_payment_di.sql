@@ -5,6 +5,9 @@
     properties={"partitioning": "ARRAY['dt']"}
   )
 }}
+-- depends_on: {{ ref('dim_pub_customer') }}
+-- depends_on: {{ ref('dim_pub_date') }}
+-- depends_on: {{ ref('dim_trade_shop') }}
 
 -- Process payment. Grain: One row per payment, on the Asia/Ho_Chi_Minh day it was captured.
 -- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. ship_date;

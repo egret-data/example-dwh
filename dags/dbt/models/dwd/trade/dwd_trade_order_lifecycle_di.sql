@@ -11,6 +11,9 @@
     properties={"partitioning": "ARRAY['dt']"}
   )
 }}
+-- depends_on: {{ ref('dim_pub_customer') }}
+-- depends_on: {{ ref('dim_pub_date') }}
+-- depends_on: {{ ref('dim_trade_shop') }}
 
 with touched as (
     select order_id

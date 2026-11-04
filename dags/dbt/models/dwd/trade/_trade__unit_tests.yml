@@ -15,6 +15,12 @@ unit_tests:
       - input: ref('dwd_trade_payment_di')
         rows:
           - {payment_id: p4, order_id: 2, pay_amt: 80000, paid_at: '2026-11-02 08:00:00 +07:00', dt: '2026-11-02'}
+      - input: ref('dim_pub_customer')
+        rows: []
+      - input: ref('dim_pub_date')
+        rows: []
+      - input: ref('dim_trade_shop')
+        rows: []
     expect:
       rows:
         - {order_id: 2, pay_date_key: 5eae58763dcbe2a0584afac0ef91415a, customer_key: c1, pay_amt: 80000, paid_at: '2026-11-02 08:00:00 +07:00', is_paid: true, dt: '2026-11-01'}
@@ -32,6 +38,12 @@ unit_tests:
         rows:
           - {payment_id: p7a, order_id: 7, pay_amt: 60000, paid_at: '2026-11-02 08:00:00 +07:00', dt: '2026-11-02'}
           - {payment_id: p7b, order_id: 7, pay_amt: 40000, paid_at: '2026-11-02 09:00:00 +07:00', dt: '2026-11-02'}
+      - input: ref('dim_pub_customer')
+        rows: []
+      - input: ref('dim_pub_date')
+        rows: []
+      - input: ref('dim_trade_shop')
+        rows: []
     expect:
       rows:
         - {order_id: 7, pay_date_key: 5eae58763dcbe2a0584afac0ef91415a, pay_amt: 100000, paid_at: '2026-11-02 08:00:00 +07:00', is_paid: true, dt: '2026-11-01'}
@@ -46,6 +58,12 @@ unit_tests:
         rows:
           - {order_id: 4, order_date_key: d2, customer_key: c1, shop_key: s2, order_amt: 40000, created_at: '2026-11-02 20:00:00 +07:00', dt: '2026-11-02'}
       - input: ref('dwd_trade_payment_di')
+        rows: []
+      - input: ref('dim_pub_customer')
+        rows: []
+      - input: ref('dim_pub_date')
+        rows: []
+      - input: ref('dim_trade_shop')
         rows: []
     expect:
       rows:

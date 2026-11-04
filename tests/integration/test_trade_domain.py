@@ -10,11 +10,17 @@ DAYS = ["2026-11-01", "2026-11-02", "2026-11-03"]
 DOWNSTREAM = ("tag:domain:trade", "tag:app:crm")
 
 
+TRADE_BUILD_OUTPUT: list[str] = []
+
+
 def build(dt: str, *selectors: str) -> str:
     # buildable: a test runs only when every model it touches is selected or upstream of the selection, so the
     # pub build does not pick up the DWD relationships tests whose tables the later trade build creates.
     args = ["build", "--indirect-selection", "buildable", "--select", *selectors, "--vars", f"{{dt: '{dt}'}}"]
-    return run_dbt(MAIN_PROJECT, args, SCHEMA)
+    output = run_dbt(MAIN_PROJECT, args, SCHEMA)
+    if selectors == DOWNSTREAM:
+        TRADE_BUILD_OUTPUT.append(output)
+    return output
 
 
 def run_day(dt: str) -> None:
@@ -236,3 +242,14 @@ def test_rerunning_the_last_day_is_idempotent():
         query(f"SELECT count(*), sum(order_amt_sum_td) FROM {table('dws', 'dws_trade_customer_td')}")
         == before
     )
+
+
+def test_buildable_selection_still_runs_the_date_key_relationships_tests():
+    # dim_pub_date is only reached through `-- depends_on` comments; without them buildable drops these tests.
+    output = "\n".join(TRADE_BUILD_OUTPUT)
+    for test in (
+        "relationships_dwd_trade_order_di_order_date_key__date_key__ref_dim_pub_date_",
+        "relationships_dwd_trade_order_lifecycle_di_pay_date_key__date_key__ref_dim_pub_date_",
+        "relationships_dwd_trade_payment_di_pay_date_key__date_key__ref_dim_pub_date_",
+    ):
+        assert f"PASS {test}" in output, test

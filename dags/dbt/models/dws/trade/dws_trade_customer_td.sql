@@ -5,6 +5,7 @@
     properties={"partitioning": "ARRAY['dt']"}
   )
 }}
+-- depends_on: {{ ref('dim_pub_customer') }}
 
 -- One statistical period per table (td); metric columns follow warehouse/metrics.yml.
 select
