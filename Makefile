@@ -2,7 +2,7 @@ COMPOSE := docker compose -f dev/compose.yml
 DWH := uv run --locked --project tools/dwh dwh
 RUN := $(COMPOSE) run --rm airflow
 
-.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate
+.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint
 
 dev-up:
 	$(COMPOSE) up -d trino
@@ -52,3 +52,15 @@ dwh-test:
 
 validate:
 	$(DWH) validate --warehouse warehouse
+
+# dbt on the host (no Docker, no Trino): same dbt versions as the image via requirements-dbt.txt.
+HOST_DBT := uvx --python 3.12 --from dbt-core --with-requirements requirements-dbt.txt dbt
+HOST_DBT_ENV := DBT_PROFILES_DIR=dags/dbt DBT_PACKAGES_INSTALL_PATH=$(CURDIR)/.dbt/packages \
+	DBT_TARGET_PATH=$(CURDIR)/.dbt/target DBT_LOG_PATH=$(CURDIR)/.dbt/logs DBT_SEND_ANONYMOUS_USAGE_STATS=false
+
+manifest:
+	$(HOST_DBT_ENV) $(HOST_DBT) deps --project-dir dags/dbt
+	$(HOST_DBT_ENV) $(HOST_DBT) parse --project-dir dags/dbt
+
+dwh-lint: manifest
+	$(DWH) lint --warehouse warehouse --manifest .dbt/target/manifest.json
