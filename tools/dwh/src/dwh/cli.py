@@ -11,6 +11,7 @@ from dwh.design_gate import added_concepts, check_gate, load_warehouse_at
 from dwh.findings import Finding
 from dwh.lint import Context, run_lint
 from dwh.manifest import load_manifest
+from dwh.scaffold import ScaffoldError, scaffold, write_files
 from dwh.standards import check_standards
 from dwh.sync_agents import STALE_SUFFIX, SkillError, sync
 from dwh.validate import validate
@@ -118,6 +119,32 @@ def cmd_sync_agents(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_scaffold(args: argparse.Namespace) -> int:
+    findings = validate(args.warehouse)
+    if findings:
+        return report(findings)
+    try:
+        files = scaffold(
+            args.name,
+            load_warehouse(args.warehouse),
+            project_dir=args.project_dir,
+            grain=args.grain,
+            metrics=args.metric,
+            upstream=args.upstream,
+            watermark=args.watermark,
+        )
+        if args.write:
+            for path in write_files(files, Path(".")):
+                print(f"wrote {path}")
+            return 0
+    except ScaffoldError as exc:
+        print(f"dwh: {exc}", file=sys.stderr)
+        return 2
+    for path, text in files.items():
+        print(f"# {path}\n{text}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dwh", description="example-dwh design metadata tools")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -168,6 +195,17 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--repo", type=Path, default=Path("."))
     p.add_argument("--check", action="store_true", help="only report drift (exit 1)")
     p.set_defaults(func=cmd_sync_agents)
+
+    p = sub.add_parser("scaffold", help="generate a model's .sql/.yml (and SCD4 snapshot) from the design")
+    p.add_argument("name", help="model name, e.g. dwd_trade_order_di")
+    p.add_argument("--from", dest="upstream", nargs="+", default=[], metavar="MODEL")
+    p.add_argument("--grain", nargs="+", default=[], metavar="COLUMN")
+    p.add_argument("--metric", nargs="+", default=[], metavar="NAME")
+    p.add_argument("--watermark", default="updated_at", help="ODS di watermark column")
+    p.add_argument("--warehouse", type=Path, default=Path("warehouse"))
+    p.add_argument("--project-dir", default="dags/dbt")
+    p.add_argument("--write", action="store_true", help="write the files (never overwrites)")
+    p.set_defaults(func=cmd_scaffold)
 
     return parser
 

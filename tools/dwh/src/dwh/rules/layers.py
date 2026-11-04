@@ -13,7 +13,8 @@ ALLOWED = {
     "dws": frozenset({"dwd", "dim", "dws"}),
     "ads": frozenset({"dws", "dim"}),
 }
-SNAPSHOT_ALLOWED = frozenset({"ods"})
+# SCD4: dim_*_hist is a snapshot of the current dim_* model, keyed by the durable key (spec D11).
+SNAPSHOT_ALLOWED = frozenset({"ods", "dim"})
 CDM = ("dim", "dwd", "dws")
 MAX_DEPTH = 10
 

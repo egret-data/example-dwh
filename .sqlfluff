@@ -10,6 +10,8 @@ rules = core,AM04
 apply_dbt_builtins = True
 # dbt's `modules` does not exist here: dev/sqlfluff/macros overrides get_dt() with a fixed date.
 load_macros_from_path = dags/dbt/macros,dev/sqlfluff/macros
+# Python stand-ins for package macros (dbt_utils), so models that call them lint.
+library_path = dev/sqlfluff/libs
 
 [sqlfluff:layout:type:alias_expression]
 spacing_before = align
