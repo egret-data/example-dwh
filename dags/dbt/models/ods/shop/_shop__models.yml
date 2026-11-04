@@ -12,7 +12,8 @@ models:
         data_tests: [not_null]
     data_tests:
       - dbt_utils.unique_combination_of_columns:
-          combination_of_columns: [order_id, dt]
+          arguments:
+            combination_of_columns: [order_id, dt]
 
   - name: ods_shop_customers_df
     description: "Daily full copy of shop.customers. Grain: one row per customer per dt."
@@ -25,4 +26,5 @@ models:
         data_tests: [not_null]
     data_tests:
       - dbt_utils.unique_combination_of_columns:
-          combination_of_columns: [customer_id, dt]
+          arguments:
+            combination_of_columns: [customer_id, dt]
