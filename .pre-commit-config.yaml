@@ -1,0 +1,34 @@
+# Local hooks only: nothing is cloned at commit time. Install once with `make pre-commit-install`.
+# CI runs the same checks (make lint, sql-lint, validate, dwh-lint), so a skipped hook is caught on the PR.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uvx ruff@0.17.3 check --force-exclude
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format --check (Python and Python blocks in Markdown)
+        entry: uvx ruff@0.17.3 format --check --force-exclude
+        language: system
+        types_or: [python, markdown]
+      - id: sqlfluff
+        name: sqlfluff lint (dbt models)
+        entry: uvx --python 3.12 sqlfluff==4.5.0 lint
+        language: system
+        files: ^dags/dbt/models/.*\.sql$
+      - id: dwh-validate
+        name: dwh validate
+        entry: uv run --locked --project tools/dwh dwh validate --warehouse warehouse
+        language: system
+        files: ^warehouse/
+        pass_filenames: false
+      - id: dwh-lint
+        name: dwh lint (changed files)
+        entry: >-
+          bash -c 'make -s manifest && uv run --locked --project tools/dwh dwh lint
+          --project-dir dags/dbt --changed "$@"' --
+        language: system
+        files: ^(dags/dbt/|warehouse/)
+        require_serial: true  # one `make manifest` at a time: parallel batches race on dbt deps

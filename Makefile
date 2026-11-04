@@ -2,7 +2,7 @@ COMPOSE := docker compose -f dev/compose.yml
 DWH := uv run --locked --project tools/dwh dwh
 RUN := $(COMPOSE) run --rm airflow
 
-.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards sql-lint sync-agents sync-agents-check
+.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards sql-lint sync-agents sync-agents-check pre-commit-install pre-commit
 
 dev-up:
 	$(COMPOSE) up -d trino
@@ -80,3 +80,9 @@ dwh-lint: manifest
 catalog: manifest
 	$(HOST_DBT_ENV) $(HOST_DBT) docs generate --project-dir dags/dbt --no-compile --empty-catalog --static
 	$(DWH) catalog --warehouse warehouse --out site --dbt-docs .dbt/target/static_index.html
+
+pre-commit-install:
+	uvx pre-commit@4.7.0 install
+
+pre-commit:
+	uvx pre-commit@4.7.0 run --all-files

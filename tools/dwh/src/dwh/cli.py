@@ -4,7 +4,7 @@ import argparse
 import json
 import sys
 from collections.abc import Sequence
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from dwh.catalog import write_catalog
 from dwh.design_gate import added_concepts, check_gate, load_warehouse_at
@@ -28,6 +28,13 @@ def cmd_validate(args: argparse.Namespace) -> int:
     return report(validate(args.warehouse))
 
 
+def in_scope(findings: Sequence[Finding], changed: Sequence[str]) -> list[Finding]:
+    """Findings on a changed file or in a changed file's folder (a model's .sql and .yml sit together)."""
+    files = {PurePosixPath(path).as_posix() for path in changed}
+    folders = {str(PurePosixPath(path).parent) for path in files}
+    return [f for f in findings if f.path in files or str(PurePosixPath(f.path).parent) in folders]
+
+
 def cmd_lint(args: argparse.Namespace) -> int:
     findings = validate(args.warehouse)
     if findings:
@@ -46,6 +53,8 @@ def cmd_lint(args: argparse.Namespace) -> int:
     findings = run_lint(Context(load_warehouse(args.warehouse), project))
     if args.select:
         findings = [f for f in findings if f.code.startswith(tuple(args.select))]
+    if args.changed is not None:
+        findings = in_scope(findings, args.changed)
     return report(findings)
 
 
@@ -124,6 +133,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--project-dir", default="dags/dbt", help="dbt project directory, prefixed onto reported paths"
     )
     p.add_argument("--select", nargs="*", default=[], help="only report codes starting with these prefixes")
+    p.add_argument(
+        "--changed",
+        nargs="*",
+        default=None,
+        metavar="FILE",
+        help="only report findings for these files' folders",
+    )
     p.set_defaults(func=cmd_lint)
 
     p = sub.add_parser("design-gate", help="require an approved design for model-extending changes")
