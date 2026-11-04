@@ -1,2 +1,18 @@
 # Process x dimension matrix (spec §5). role names a role-playing use, e.g. order_date.
-bus_matrix: []
+bus_matrix:
+  - process: order
+    dimensions:
+      - {dimension: date, role: order_date}
+      - {dimension: customer}
+      - {dimension: shop}
+  - process: payment
+    dimensions:
+      - {dimension: date, role: pay_date}
+      - {dimension: customer}
+      - {dimension: shop}
+  - process: order_lifecycle
+    dimensions:
+      - {dimension: date, role: order_date}
+      - {dimension: date, role: pay_date}
+      - {dimension: customer}
+      - {dimension: shop}

@@ -32,3 +32,21 @@ words:
   - {word: from, meaning: Start of a range.}
   - {word: to, meaning: End of a range.}
   - {word: current, meaning: The current version of a dimension row (is_current).}
+  - {word: trade, meaning: Orders and payments domain.}
+  - {word: crm, meaning: Customer relationship management.}
+  - {word: order, meaning: A customer purchase.}
+  - {word: payment, meaning: Money captured for an order.}
+  - {word: pay, meaning: "Payment, as in pay_amt and pay_date."}
+  - {word: shop, meaning: A shop that sells on the platform.}
+  - {word: customer, meaning: A person who buys.}
+  - {word: city, meaning: City name.}
+  - {word: channel, meaning: Sales channel of an order.}
+  - {word: app, meaning: Mobile app channel.}
+  - {word: web, meaning: Website channel.}
+  - {word: status, meaning: State of an order.}
+  - {word: lifecycle, meaning: Stages of an order from placed to paid.}
+  - {word: created, meaning: Time a row was created at the source.}
+  - {word: paid, meaning: Time or state of payment.}
+  - {word: updated, meaning: Time a row was last changed at the source.}
+  - {word: method, meaning: Payment method.}
+  - {word: value, meaning: "Customer value, as in the CRM export."}

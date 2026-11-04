@@ -16,3 +16,27 @@ dimensions:
       - name: weekday
         description: ISO day of week, 1 = Monday.
         history: current
+  - name: customer
+    scope: pub
+    description: A person who buys from the shops. Shared by every domain.
+    natural_key: [customer_id]
+    history: scd4
+    attributes:
+      - name: customer_name
+        description: Display name of the customer.
+        history: current
+      - name: city
+        description: City of the customer when the fact happened.
+        history: historical
+  - name: shop
+    scope: trade
+    description: A shop that sells on the platform.
+    natural_key: [shop_id]
+    history: scd1
+    attributes:
+      - name: shop_name
+        description: Display name of the shop.
+        history: current
+      - name: city
+        description: City of the shop.
+        history: current

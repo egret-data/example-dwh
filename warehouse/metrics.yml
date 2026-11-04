@@ -1,6 +1,57 @@
 # Metrics (spec §5, 06-metrics). Derived metric name = {modifiers}_{atomic}_{agg}_{period},
 # where agg is sum | cnt | dcnt | min | max and an nd period renders as <days>d.
 # Non-additive results are calculated metrics over stored numerator/denominator metrics.
-atomic: []
-derived: []
-calculated: []
+atomic:
+  - name: order_amt
+    process: order
+    description: Total amount of an order.
+    aggregation: sum
+    additivity: additive
+  - name: order
+    process: order
+    description: Number of orders.
+    aggregation: count
+    additivity: additive
+  - name: pay_amt
+    process: payment
+    description: Amount of a payment.
+    aggregation: sum
+    additivity: additive
+derived:
+  - name: order_amt_sum_1d
+    atomic: order_amt
+    period: 1d
+    grain: [customer]
+    description: Order amount per customer on the dt day.
+  - name: order_cnt_1d
+    atomic: order
+    period: 1d
+    grain: [customer]
+    description: Orders per customer on the dt day.
+  - name: app_order_amt_sum_1d
+    atomic: order_amt
+    period: 1d
+    modifiers: [app]
+    grain: [customer]
+    description: Order amount per customer on the dt day, app orders only.
+  - name: order_amt_sum_30d
+    atomic: order_amt
+    period: nd
+    days: 30
+    grain: [customer]
+    description: Order amount per customer over the last 30 days.
+  - name: order_amt_sum_td
+    atomic: order_amt
+    period: td
+    grain: [customer]
+    description: Order amount per customer over all history.
+  - name: order_cnt_td
+    atomic: order
+    period: td
+    grain: [customer]
+    description: Orders per customer over all history.
+calculated:
+  - name: avg_order_amt_td
+    formula: order_amt_sum_td / nullif(order_cnt_td, 0)
+    inputs: [order_amt_sum_td, order_cnt_td]
+    description: Average order amount per customer over all history.
