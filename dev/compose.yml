@@ -58,6 +58,27 @@ services:
     volumes:
       - ./trino/catalog:/etc/trino/catalog:ro
 
+  airflow:
+    image: example-dwh-airflow:dev
+    profiles: ["tools"]
+    depends_on:
+      trino: { condition: service_started }
+    environment:
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags/repo/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      DBT_PROFILES_DIR: /opt/airflow/dags/repo/dags/dbt
+      DBT_TARGET: dev
+      DBT_SCHEMA: dev
+      TRINO_HOST: trino
+      TRINO_PORT: "8080"
+      TRINO_USER: dbt
+      TRINO_CATALOG: iceberg
+    # Same path the Helm chart's git-sync uses.
+    volumes:
+      - ..:/opt/airflow/dags/repo
+    working_dir: /opt/airflow/dags/repo
+    entrypoint: ["/bin/bash", "-c"]
+
 volumes:
   pgdata:
   rustfsdata:

@@ -8,3 +8,6 @@ dags/dbt/target/
 dags/dbt/dbt_packages/
 dags/dbt/logs/
 logs/
+
+# dbt local artifacts
+.user.yml
