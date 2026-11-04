@@ -13,7 +13,7 @@
   {%- for node in graph.nodes.values() if node.resource_type == 'model' -%}
     {%- set layer = node.fqn[1] -%}
     {%- set partitioning = (node.config.properties or {}).get('partitioning', '') -%}
-    {%- if layer in default_days and 'dt' in partitioning -%}
+    {%- if layer in default_days and "'dt'" in partitioning -%}
       {%- set relation = adapter.get_relation(database=node.database, schema=node.schema, identifier=node.alias) -%}
       {%- if relation is none -%}
         {{ log('maintenance skip (not built): ' ~ node.unique_id, info=true) }}

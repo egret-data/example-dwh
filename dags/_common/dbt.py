@@ -47,5 +47,11 @@ def dbt_dag_kwargs(select: list[str], dt_template: str = DT_TEMPLATE) -> dict:
             invocation_mode=InvocationMode.SUBPROCESS,
         ),
         # Passed to run time only (templated), so `dbt ls` at parse time never renders it.
-        "operator_args": {"vars": {"dt": dt_template}},
+        "operator_args": {
+            "vars": {"dt": dt_template},
+            # Cosmos reads the Asset outlets from run_results.json under DBT_TARGET_PATH. The image sets one
+            # path for the whole container, so concurrent tasks read each other's results and emit events for
+            # the wrong Asset (measured with a live scheduler). One directory per task keeps them apart.
+            "env": {"DBT_TARGET_PATH": "/tmp/dbt/target/{{ ti.task_id }}"},
+        },
     }

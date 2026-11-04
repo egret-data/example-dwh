@@ -85,3 +85,13 @@ def test_asset_template_prefers_conf_dt_and_is_empty_without_an_ods_event():
 
     assert render_asset_template([ods], conf={"dt": "2026-10-30"}) == "2026-10-30"
     assert render_asset_template([]) == ""
+
+
+def test_asset_template_renders_the_earliest_day_whatever_the_event_order():
+    # Several dbt_ods_shop runs can collapse into one asset-triggered run; event DWDs read every ODS partition
+    # from dt on, so the earliest day is the safe one. A later day would skip the days before it.
+    nov1 = asset_event("dbt_ods_shop", datetime(2026, 10, 31, 17, 0, tzinfo=UTC))
+    nov2 = asset_event("dbt_ods_shop", datetime(2026, 11, 1, 17, 0, tzinfo=UTC))
+
+    assert render_asset_template([nov2, nov1]) == "2026-11-01"
+    assert render_asset_template([nov1, nov2]) == "2026-11-01"

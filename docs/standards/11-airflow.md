@@ -210,8 +210,9 @@ Every model and snapshot runs in exactly one DAG, chosen by its selection tag (S
 `_hist` snapshots run in `dags/transform/dbt_pub.py`, which selects `tag:domain:pub` and is scheduled on the ODS
 Assets it reads. Domain models run in `dbt_<domain>`, which selects `tag:domain:<domain>` and is scheduled on the
 Assets it reads (STD-11-04). Snapshots run every day, before the DWD that joins them; inside one DAG, dbt's `ref()`
-order does this, and across DAGs `dbt_trade` also waits on the Asset Cosmos emits for the snapshot. A missed snapshot day loses those versions for good, because a backfill cannot recreate history:
-monitor that each snapshot ran.
+order does this, and across DAGs `dbt_trade` also waits on the Asset Cosmos emits for the snapshot. A missed
+snapshot day loses those versions for good, because a backfill cannot recreate history: monitor that each
+snapshot ran.
 
 Correct:
 

@@ -240,8 +240,9 @@ Source: Kimball (late-arriving facts) · Spec §7
 
 Each layer keeps its default retention: ODS 400 days, DWD 3 years, DIM and its `_hist` tables forever, DWS 3 years,
 ADS 400 days. A model overrides the default with `config.meta.retention_days`. The weekly `iceberg_maintenance`
-DAG (macro `iceberg_maintenance`) deletes older `dt` partitions of ODS, DWD, DWS and ADS models and runs the Iceberg
-cleanup of STD-08-09.
+DAG (macro `iceberg_maintenance`) deletes older `dt` partitions of the partitioned ODS, DWD, DWS and ADS models and
+runs the Iceberg cleanup of STD-08-09. ADS tables are full tables without a `dt` partition, so retention does not
+prune them.
 
 Correct:
 
