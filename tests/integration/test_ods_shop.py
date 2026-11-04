@@ -4,6 +4,7 @@ Tests run in file order and share state: each builds on the previous load.
 """
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 from helpers import CATALOG, MAIN_PROJECT, drop_schemas, query, run_dbt
@@ -94,3 +95,14 @@ def test_rerun_with_empty_batch_clears_the_dt_partition():
             for oid, cid, status, amount, created, updated in rows
         )
         query(f"INSERT INTO shop.public.orders ({columns}) VALUES {values}")
+
+
+def test_orders_window_is_pushed_down_to_the_source():
+    """The source column is compared raw, so Trino sends the dt window to the shop database."""
+    run_dbt(MAIN_PROJECT, ["compile", "--select", "ods_shop_orders_di", "--vars", "{dt: '2026-11-02'}"], SCHEMA)
+    compiled = Path(f"/tmp/dbt/target-{MAIN_PROJECT.name}/compiled/example_dwh/models/ods/shop")
+    sql = (compiled / "ods_shop_orders_di.sql").read_text()
+
+    plan = "\n".join(row[0] for row in query(f"EXPLAIN {sql}"))
+
+    assert "constraint on [updated_at]" in plan, plan
