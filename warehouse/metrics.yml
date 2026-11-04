@@ -1,0 +1,6 @@
+# Metrics (spec §5, 06-metrics). Derived metric name = {modifiers}_{atomic}_{agg}_{period},
+# where agg is sum | cnt | dcnt | min | max and an nd period renders as <days>d.
+# Non-additive results are calculated metrics over stored numerator/denominator metrics.
+atomic: []
+derived: []
+calculated: []

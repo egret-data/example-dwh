@@ -5,8 +5,22 @@ sources:
     description: Shop OLTP database (Trino catalog `shop`, Postgres connector).
     database: shop
     schema: public
+    config:
+      meta:
+        # The shop database stores naive TIMESTAMP columns in Vietnam local time.
+        timezone: Asia/Ho_Chi_Minh
     tables:
       - name: orders
         description: One row per order; updated in place.
+        config:
+          meta:
+            load: di
+            watermark: updated_at
+            delete_handling: none
+            delete_handling_reason: The shop app cancels orders by status and never deletes order rows.
       - name: customers
         description: One row per customer; updated in place.
+        config:
+          meta:
+            load: df
+            delete_handling: none

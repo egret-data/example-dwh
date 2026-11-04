@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
-# Runs dbt_ods_shop for 2026-11-02 inside the Airflow image, then checks data, registered assets
-# and AssetEvent rows. 2026-11-02 is deliberately not "yesterday" (get_dt()'s default), so the
-# row checks prove that dt comes from Airflow's {{ ds }}.
+# Runs dbt_ods_shop for logical date 2026-11-03 inside the Airflow image, then checks data, registered
+# assets and AssetEvent rows. Its data interval is the Vietnam day 2026-11-02, so dt = 2026-11-02 while
+# Airflow's UTC {{ ds }} is 2026-11-03. The orders fixture has 2 rows on 2026-11-02 and 3 on
+# 2026-11-03, so the row check proves dt comes from the VN data interval (spec D12), not from ds.
 set -euo pipefail
 DIR="$(dirname "$0")"
 COMPOSE=(docker compose -f "$DIR/compose.yml")
+LOGICAL_DATE=2026-11-03
 DT=2026-11-02
 DAG=dbt_ods_shop
 URIS=(trino://trino:8080/iceberg/dev_ods/ods_shop_orders_di
@@ -16,7 +18,7 @@ LOG=/tmp/example-dwh-e2e.log
 "${COMPOSE[@]}" run --rm -e DWH_TASK_RETRIES=0 airflow "
   set -euo pipefail
   airflow db migrate >/dev/null
-  airflow dags test $DAG $DT
+  airflow dags test $DAG $LOGICAL_DATE
   echo '--- assets'
   airflow assets list --output plain
   echo '--- asset events'

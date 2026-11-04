@@ -1,21 +1,5 @@
 """Every DAG in dags/ imports cleanly and follows the minimum conventions."""
 
-from pathlib import Path
-
-import pytest
-
-try:
-    from airflow.dag_processing.dagbag import DagBag
-except ImportError:  # older import path
-    from airflow.models.dagbag import DagBag
-
-DAGS_DIR = Path(__file__).resolve().parents[2] / "dags"
-
-
-@pytest.fixture(scope="session")
-def dagbag() -> DagBag:
-    return DagBag(dag_folder=str(DAGS_DIR))
-
 
 def test_no_import_errors(dagbag):
     assert dagbag.import_errors == {}

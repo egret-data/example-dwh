@@ -6,6 +6,8 @@ from pathlib import Path
 from cosmos import ExecutionConfig, ProfileConfig, ProjectConfig, RenderConfig
 from cosmos.constants import InvocationMode, LoadMode
 
+from _common.dates import DT_TEMPLATE
+
 # Not resolve(): git-sync swaps a symlink; keep the stable /opt/airflow/dags/repo path.
 DAGS_DIR = Path(__file__).absolute().parent.parent
 DBT_PROJECT_DIR = DAGS_DIR / "dbt"
@@ -35,6 +37,6 @@ def dbt_dag_kwargs(select: list[str]) -> dict:
             dbt_executable_path=DBT_EXECUTABLE,
             invocation_mode=InvocationMode.SUBPROCESS,
         ),
-        # Passed to run time only (templated), so `dbt ls` at parse time never sees "{{ ds }}".
-        "operator_args": {"vars": {"dt": "{{ ds }}"}},
+        # Passed to run time only (templated), so `dbt ls` at parse time never renders it.
+        "operator_args": {"vars": {"dt": DT_TEMPLATE}},
     }

@@ -1,0 +1,39 @@
+version: 2
+
+# D12 boundary tests: dt is the Asia/Ho_Chi_Minh day. dbt unit tests have no graph.sources, so
+# source_timezone is always overridden here; the real lookup is covered by the integration tests.
+unit_tests:
+  - name: orders_di_window_is_the_vietnam_day
+    model: ods_shop_orders_di
+    overrides:
+      vars: {dt: "2026-11-02"}
+      macros: {is_incremental: false, source_timezone: Asia/Ho_Chi_Minh}
+    given:
+      - input: source('shop', 'orders')
+        rows:
+          - {order_id: 1, customer_id: 1, order_status: paid, total_amount: 1, created_at: "2026-11-01 23:00:00", updated_at: "2026-11-01 23:30:00"}
+          - {order_id: 2, customer_id: 1, order_status: paid, total_amount: 1, created_at: "2026-11-01 23:00:00", updated_at: "2026-11-02 00:30:00"}
+          - {order_id: 3, customer_id: 1, order_status: paid, total_amount: 1, created_at: "2026-11-02 23:00:00", updated_at: "2026-11-02 23:30:00"}
+          - {order_id: 4, customer_id: 1, order_status: paid, total_amount: 1, created_at: "2026-11-02 23:00:00", updated_at: "2026-11-03 00:30:00"}
+    expect:
+      rows:
+        - {order_id: 2}
+        - {order_id: 3}
+
+  - name: orders_di_converts_a_utc_source_to_the_vietnam_day
+    model: ods_shop_orders_di
+    overrides:
+      vars: {dt: "2026-11-02"}
+      macros: {is_incremental: false, source_timezone: UTC}
+    given:
+      - input: source('shop', 'orders')
+        rows:
+          # 16:30 UTC = 23:30 VN on the previous day; 17:30 UTC = 00:30 VN on the next day.
+          - {order_id: 1, customer_id: 1, order_status: paid, total_amount: 1, created_at: "2026-11-01 16:00:00", updated_at: "2026-11-01 16:30:00"}
+          - {order_id: 2, customer_id: 1, order_status: paid, total_amount: 1, created_at: "2026-11-01 16:00:00", updated_at: "2026-11-01 17:30:00"}
+          - {order_id: 3, customer_id: 1, order_status: paid, total_amount: 1, created_at: "2026-11-02 16:00:00", updated_at: "2026-11-02 16:30:00"}
+          - {order_id: 4, customer_id: 1, order_status: paid, total_amount: 1, created_at: "2026-11-02 16:00:00", updated_at: "2026-11-02 17:30:00"}
+    expect:
+      rows:
+        - {order_id: 2}
+        - {order_id: 3}

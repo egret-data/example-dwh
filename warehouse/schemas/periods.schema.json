@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "warehouse/periods.yml",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["periods"],
+  "properties": {
+    "periods": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "description"],
+        "properties": {
+          "name": {"enum": ["1d", "nd", "td", "1w", "hh", "mm"]},
+          "description": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

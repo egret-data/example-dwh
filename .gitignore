@@ -11,3 +11,5 @@ logs/
 
 # dbt local artifacts
 .user.yml
+.dbt/
+site/
