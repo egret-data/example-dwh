@@ -89,19 +89,18 @@ format and that every lint code it cites exists (DWH-R).
 
 `dwh scaffold` prints (or, with `--write`, creates) the files of a new model from the design in `warehouse/*.yml`,
 with empty descriptions so that `dwh lint` fails until you fill them. The design must declare the domain, process,
-dimensions and metrics first; the real `warehouse/` has none yet, so the examples below, one per layer, run against
-the eval fixture design (`--warehouse evals/fixtures/trade/warehouse`) and print the files without writing them:
+dimensions and metrics first. The examples below, one per layer, run against the `trade` design in `warehouse/` and
+print the files without writing them:
 
 ```bash
 dwh="uv run --project tools/dwh dwh"
-wh="--warehouse evals/fixtures/trade/warehouse"
-$dwh scaffold ods_shop_orders_di --grain order_id $wh
-$dwh scaffold dim_pub_customer --from ods_shop_customers_df $wh   # also writes dim_pub_customer_hist
-$dwh scaffold dwd_trade_order_di --from ods_shop_orders_di --grain order_id --event-at created_at $wh
+$dwh scaffold ods_shop_orders_di --grain order_id
+$dwh scaffold dim_pub_customer --from ods_shop_customers_df   # also writes dim_pub_customer_hist
+$dwh scaffold dwd_trade_order_di --from ods_shop_orders_di --grain order_id --event-at created_at
 $dwh scaffold dws_trade_customer_1d --from dwd_trade_order_di --grain customer_key \
-  --metric order_amt_sum_1d order_cnt_1d $wh
-$dwh scaffold ads_bi_customer_daily --from dws_trade_customer_1d --grain customer_key \
-  --metric order_amt_sum_1d avg_order_amt_1d $wh
+  --metric order_amt_sum_1d order_cnt_1d
+$dwh scaffold ads_crm_customer_value --from dws_trade_customer_td --grain customer_key \
+  --metric order_amt_sum_td avg_order_amt_td
 ```
 
 Style and hooks:
@@ -112,15 +111,16 @@ make pre-commit-install  # install the git hook
 make pre-commit          # run every hook on all files
 ```
 
-To test a change to a skill, run its scenario (`evals/scenarios/`) headless, first on the old commit (RED: the agent
-should fail) and then on the new one (GREEN: it should pass), and grade the answers by hand:
+To test a change to a skill, run its scenario (`evals/scenarios/`) headless with and without the skills, and let the
+LLM judge grade both answers (see `evals/README.md`):
 
 ```bash
-./evals/run.sh new-source-crm --ref <old-commit>   # RED
-./evals/run.sh new-source-crm                      # GREEN, at HEAD
+./evals/run.sh new-source-crm --without-skills   # baseline: no skills or agent instruction files
+./evals/run.sh new-source-crm                    # with skills, at HEAD
+make eval-all                                    # every scenario, both ways, graded and summarised
 ```
 
-Answers go to `evals/results/` (git-ignored). Plan 4 adds automated grading and a second tool.
+Answers, grades and summaries go to `evals/results/` (git-ignored).
 
 ## How it runs in production
 

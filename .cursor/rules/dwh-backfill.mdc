@@ -15,6 +15,10 @@ alwaysApply: false
    or `airflow backfill create --dag-id <dag> --from-date <d> --to-date <d> --max-active-runs 1`). Each run replaces
    its own partition, so re-running a DWD, DWS or ADS dt is safe. Re-running a past ODS dt is not always safe: see
    the red flags.
+   - In Airflow, `dbt_pub` and `dbt_trade` are asset-triggered and take `dt` from the producer ODS run's data
+     interval, so a `conf.dt` on a manual ODS run does not reach them. To rebuild a past day, trigger `dbt_pub` and
+     then `dbt_trade` manually with `conf.dt` (`airflow dags trigger dbt_trade --conf '{"dt": "<dt>"}'`), one day
+     at a time, oldest first.
 4. **Rebuild windowed DWS to today.** `nd` and `td` DWS tables must be rebuilt for every dt from the earliest
    changed dt to today, because a `td` value depends on every earlier day.
 5. **Leave history alone.** Re-running snapshots does not rebuild `dim_*_hist`. Rebuild history only with an
