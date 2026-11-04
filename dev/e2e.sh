@@ -4,7 +4,8 @@ set -euo pipefail
 DIR="$(dirname "$0")"
 COMPOSE=(docker compose -f "$DIR/compose.yml")
 
-"${COMPOSE[@]}" run --rm airflow "
+# DWH_TASK_RETRIES=0: a failing task fails the run now instead of waiting out 2 x 5 min retries.
+"${COMPOSE[@]}" run --rm -e DWH_TASK_RETRIES=0 airflow "
   set -euo pipefail
   airflow db migrate >/dev/null
   airflow dags test dbt_ods_shop 2026-11-03
