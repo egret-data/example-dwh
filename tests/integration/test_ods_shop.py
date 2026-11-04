@@ -86,7 +86,8 @@ def test_shops_and_payments_load():
 
 def test_orders_carry_shop_and_channel():
     rows = query(
-        f"SELECT order_id, shop_id, channel FROM {ODS}.ods_shop_orders_di WHERE dt = DATE '2026-11-02' ORDER BY 1"
+        f"SELECT order_id, shop_id, channel FROM {ODS}.ods_shop_orders_di "
+        "WHERE dt = DATE '2026-11-02' ORDER BY 1"
     )
     assert rows == [(2, 1, "web"), (3, 2, "app")]
 
