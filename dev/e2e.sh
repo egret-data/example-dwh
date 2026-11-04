@@ -18,5 +18,11 @@ ROWS=$("${COMPOSE[@]}" exec -T trino trino --execute \
 echo "$ROWS"
 [ "$ROWS" = '"3"' ] || { echo "expected 3 rows, got $ROWS" >&2; exit 1; }
 
-grep -q 'trino://' /tmp/example-dwh-e2e.log || { echo "no trino:// assets emitted" >&2; exit 1; }
+# Check only the emitted-assets section: task logs also contain trino:// inlet lines.
+LOG=/tmp/example-dwh-e2e.log
+ASSETS=$(sed -n '/^--- assets/,/^--- rows/p' "$LOG")
+for uri in trino://trino:8080/iceberg/dev_ods/ods_shop_orders_di \
+           trino://trino:8080/iceberg/dev_ods/ods_shop_customers_df; do
+  grep -qF "$uri" <<<"$ASSETS" || { echo "asset not emitted: $uri" >&2; exit 1; }
+done
 echo "e2e OK"
