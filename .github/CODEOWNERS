@@ -1,0 +1,6 @@
+# Spec §6.3: design metadata, the tools that enforce it, CI and the spec need an owner's review.
+# Owners are requested automatically; "Require review from Code Owners" is off while the repo has one maintainer.
+/warehouse/        @viethqb
+/tools/dwh/        @viethqb
+/.github/          @viethqb
+/docs/en/specs/    @viethqb
