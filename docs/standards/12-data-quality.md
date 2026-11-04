@@ -107,18 +107,17 @@ Source: Spec §7
 
 ### STD-12-04 Inferred members (SHOULD)
 
-Count the inferred members of each DIM per dt (STD-04-07) and alert when the count grows. A few are normal: they
-are facts that arrived before their dimension row. A rising count means the dimension load is late or the source key
-is wrong.
+Count the inferred members of each DIM after each build (STD-04-07) and alert when the count grows. A few are
+normal: they are facts that arrived before their dimension row. A rising count means the dimension load is late or
+the source key is wrong. A DIM has no `dt`; for a count per day, group the inferred rows of its `_hist` snapshot by
+the date of `valid_from`.
 
 Correct:
 
 ```sql
-select dt, count(*) as inferred_member_cnt
+select count(*) as inferred_member_cnt
 from dim.dim_pub_customer
 where is_inferred
-group by dt
-order by dt desc
 ```
 
 Incorrect:

@@ -134,7 +134,7 @@ Correct:
 
 ```text
 PR description:
-Adds dimension `customer` (trade).
+Adds dimension `date` (pub).
 Design: docs/designs/2026-11-04-date-dimension.md
 Labels: design-approved
 ```
@@ -143,7 +143,7 @@ Incorrect:
 
 ```text
 PR description:
-Adds dimension `customer` (trade). Design is in the wiki.
+Adds dimension `date` (pub). Design is in the wiki.
 # no docs/designs/ link and no design-approved label
 ```
 

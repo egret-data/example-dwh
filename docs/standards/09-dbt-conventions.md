@@ -97,9 +97,14 @@ models:
     config:
       contract: {enforced: true}
     columns:
-      - name: order_key
-        description: Surrogate key of the order.
+      - name: customer_key
+        description: Durable key of the customer who placed the order.
         data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_pub_customer')
+                field: customer_key
       - name: dt
         description: Partition date.
         data_type: date
@@ -112,9 +117,14 @@ models:
   - name: dwd_trade_order_di   # no contract: a column type can change without a failure
     description: One row per order per dt.
     columns:
-      - name: order_key
-        description: Surrogate key of the order.
+      - name: customer_key
+        description: Durable key of the customer who placed the order.
         data_type: varchar
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_pub_customer')
+                field: customer_key
       - name: dt
         description: Partition date.
         data_type: date
@@ -126,8 +136,10 @@ Checked by: DWH-T03
 ### STD-09-04 Tags (MUST)
 
 Layer tags (`layer:ods`, `layer:dwd`, and so on) and the per-source tag (`ods_<source>`) come from `dbt_project.yml`.
-A model never sets them by hand. Domain models add `domain:<domain>` in their `.yml`. DAGs select by these tags
-(STD-11-02).
+A model never sets them by hand. Every DIM, DWD, DWS and ADS model sets one selection tag under `config.tags` in its
+`.yml`, and `dwh scaffold` writes it: `domain:pub` for `dim_pub_*`, `domain:<domain>` for `dim_<domain>_*`, DWD
+and DWS, and `app:<app>` for ADS. A `_hist` snapshot carries the tag of its DIM. DAGs select by these tags
+(STD-11-02, STD-11-08).
 
 Correct:
 
@@ -220,15 +232,20 @@ Source: Spec §11
 
 ### STD-09-07 Start from the scaffold (SHOULD)
 
-Create a model with `dwh scaffold`, so its name, contract, tests and tags start correct and lint-clean. The command
-reads the design in `warehouse/` and never overwrites an existing file. A DWD needs `--grain`, and its process must
-already be in `warehouse/processes.yml` with a row in `warehouse/bus_matrix.yml`; scaffold stops otherwise. Edit the result; do not write the first draft by
-hand.
+Create a model with `dwh scaffold`, so its name, contract, tests and selection tag start correct and lint-clean. The
+command reads the design in `warehouse/` and never overwrites an existing file. A DWD needs `--grain`, and its
+process must already be in `warehouse/processes.yml` with a row in `warehouse/bus_matrix.yml`; scaffold stops
+otherwise. A transaction DWD also needs `--event-at`, the event timestamp column, and gets the event shape of
+STD-05-08. Scaffold refuses an accumulating-snapshot DWD, which is written by hand. Its DWD keys map a null natural
+key to `'-1'`, and its DIM unions the `'-1'` and `'-2'` members (STD-04-06). A DIM from a `di` upstream keeps the
+latest version per natural key; from a `df` upstream it reads the latest partition. Edit the result; do not write
+the first draft by hand.
 
 Correct:
 
 ```bash
-uv run --locked --project tools/dwh dwh scaffold dwd_trade_order_di --from ods_shop_orders_di --grain order_id --write
+uv run --locked --project tools/dwh dwh scaffold dwd_trade_order_di --from ods_shop_orders_di --grain order_id \
+  --event-at created_at --write
 ```
 
 Incorrect:

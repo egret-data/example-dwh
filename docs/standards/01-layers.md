@@ -4,8 +4,9 @@ Scope: the five layers (ODS, DIM, DWD, DWS, ADS), what each one holds and which 
 to every dbt model and snapshot.
 
 Differences from Alibaba: Alibaba groups DIM, DWD and DWS into one common data model layer (CDM). Here they are three
-folders with their own name prefixes. Alibaba does not let ADS read ODS; here ADS may additionally read DWD, but only
-with a written reason (STD-01-04).
+folders with their own name prefixes. In Alibaba, ADS reads the CDM, DWD included, and must not read ODS directly.
+Here ADS must not read ODS either, and it reads DWS and DIM; it may read DWD only when its `.yml` gives a
+`dwd_reason` (STD-01-04).
 
 ## Rules
 
@@ -58,15 +59,17 @@ Checked by: DWH-L03
 
 DIM and DWD read ODS and DIM. DWS reads DWD, DIM and coarser-grain DWS. ADS reads DWS and DIM. Snapshots read ODS or
 the current DIM model. No model reads a layer above it, and no model reads its own layer except where listed (DIM,
-DWS). The checker compares the layer of each `ref()` target with this list.
+DWS), and except an accumulating-snapshot DWD, which reads the transaction DWDs of its process (STD-01-05). ADS
+reading DWD with a reason is STD-01-04. The checker compares the layer of each `ref()` target with this list.
 
 Correct:
 
 ```sql
 -- models/dws/trade/dws_trade_customer_1d.sql
-select customer_key, dt, sum(pay_amt) as pay_amt_sum_1d
+select customer_key, sum(pay_amt) as pay_amt_sum_1d, date '{{ get_dt() }}' as dt
 from {{ ref('dwd_trade_payment_di') }}
-group by customer_key, dt
+where dt = date '{{ get_dt() }}'
+group by customer_key
 ```
 
 Incorrect:

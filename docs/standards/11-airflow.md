@@ -179,14 +179,15 @@ Source: Spec §11
 
 The code volume is read-only at runtime. Nothing writes into the repository: dbt `target/` and logs go to `/tmp`, and
 packages are baked into the image. A DAG never installs dbt packages, so `dbt_dag_kwargs` sets `install_dbt_deps` to
-false. The packages directory comes from `DBT_PACKAGES_INSTALL_PATH`.
+false. The packages directory comes from `DBT_PACKAGES_INSTALL_PATH`. git-sync checks the repository out at
+`/opt/airflow/dags/repo`, and the dbt project is `dags/dbt` inside it (`_common/dbt.py`).
 
 Correct:
 
 ```python
 from cosmos import ProjectConfig
 
-project = ProjectConfig(dbt_project_path="/opt/airflow/dags/repo/dbt", install_dbt_deps=False)
+project = ProjectConfig(dbt_project_path="/opt/airflow/dags/repo/dags/dbt", install_dbt_deps=False)
 ```
 
 Incorrect:
@@ -195,7 +196,47 @@ Incorrect:
 from cosmos import ProjectConfig
 
 # install_dbt_deps=True writes dbt_packages into the read-only volume
-project = ProjectConfig(dbt_project_path="/opt/airflow/dags/repo/dbt", install_dbt_deps=True)
+project = ProjectConfig(dbt_project_path="/opt/airflow/dags/repo/dags/dbt", install_dbt_deps=True)
 ```
 
 Source: Spec §3
+
+### STD-11-08 Every model has a DAG (MUST)
+
+Every model and snapshot runs in exactly one DAG, chosen by its selection tag (STD-09-04). `dim_pub_*` and their
+`_hist` snapshots run in `dags/transform/dbt_pub.py`, which selects `tag:domain:pub` and is scheduled on the ODS
+Assets it reads. Domain models run in `dbt_<domain>`, which selects `tag:domain:<domain>` and is scheduled on the
+Assets it reads (STD-11-04). Snapshots run every day, before the DWD that joins them; inside one DAG, dbt's `ref()`
+order does this. A missed snapshot day loses those versions for good, because a backfill cannot recreate history:
+monitor that each snapshot ran.
+
+Correct:
+
+```python
+"""Airflow DAG: build the shared dimensions (dim_pub_*) and their _hist snapshots."""
+
+from airflow.sdk import Asset
+from cosmos import DbtDag
+
+from _common.dates import vn_date
+from _common.dbt import dbt_dag_kwargs
+from _common.defaults import DEFAULT_ARGS
+
+dbt_pub = DbtDag(
+    dag_id="dbt_pub",
+    schedule=[Asset("trino://trino:8080/iceberg/dev_ods/ods_shop_customers_df")],
+    start_date=vn_date(2026, 11, 1),
+    catchup=False,
+    default_args=DEFAULT_ARGS,
+    tags=["layer:dim", "domain:pub"],
+    **dbt_dag_kwargs(select=["tag:domain:pub"]),
+)
+```
+
+Incorrect:
+
+```text
+dim_pub_customer and dim_pub_customer_hist have no domain tag, so no DAG selects them   # they never run
+```
+
+Source: Spec §4

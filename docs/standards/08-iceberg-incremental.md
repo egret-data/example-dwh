@@ -65,7 +65,8 @@ returns `timestamp(6) with time zone`. Filter a `di` source with `in_business_da
 source column with bounds converted to the source timezone, so Trino pushes the predicate down to the source
 database. The raw naive column is compared with constants converted to the source zone. In a source zone with
 daylight saving time, the skipped or repeated local hour at a transition is assigned to the wrong day, so use the
-macros only for zones without it. Asia/Ho_Chi_Minh has none. The zone comes from `source_timezone()`, which reads `config.meta.timezone` of the source.
+macros only for zones without it. Asia/Ho_Chi_Minh has none. The zone comes from `source_timezone()`, which reads
+`config.meta.timezone` of the source.
 
 Correct:
 
@@ -203,11 +204,12 @@ Checked by: DWH-S01, DWH-S02
 
 ### STD-08-07 Late-arriving facts (MUST)
 
-A fact can reach the warehouse after its `dt` was loaded. Rebuild the affected dts (skill `dwh-backfill`) instead of
-patching rows. A `di` source whose watermark can lag, for example a source that commits rows with an older
-`updated_at`, loads with a lookback window, and the window is written in the source's `.yml`. Each run rebuilds one dt, so late
-data is handled by re-running the affected dts. The
-inferred-member case for dimensions is STD-04-07.
+A fact can reach the warehouse after its `dt` was loaded. Late facts are handled one way: re-run the affected dts
+(skill `dwh-backfill`); never patch rows, and never widen a run to load earlier days into today's partition. Each run
+rebuilds exactly one dt (STD-08-04). An event DWD re-run for dt D reads every ODS partition from D onward
+(STD-05-08), so rows that reached ODS after D are picked up. When a source's watermark can lag, for example a source
+that commits rows with an older `updated_at`, write the lag in the source's description so the operator knows which
+dts to re-run. The inferred-member case for dimensions is STD-04-07.
 
 Correct:
 

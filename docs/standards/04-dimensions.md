@@ -196,16 +196,26 @@ Checked by: DWH-Y01
 
 Two keys are reserved: `'-1'` means unknown (the natural key is null or not found) and `'-2'` means not applicable. Both are
 varchar, like every hash key, and each DIM contains one row for each. The DWD maps a null natural key to `'-1'`
-itself, because the hash of a null is a real, wrong key. The special rows carry placeholder natural keys and
-descriptive text such as `unknown`. A natural key that is not yet in the DIM becomes an inferred member
+itself, because the hash of a null is a real, wrong key. The special rows have a null natural key and null
+attributes; `dwh scaffold` unions them in from a `special_members` CTE, and the `not_null` test on the natural key
+skips the keys `'-1'` and `'-2'`. A natural key that is not yet in the DIM becomes an inferred member
 (STD-04-07) rather than `'-1'` once inferred members are in place. No lint code checks this yet.
 
 Correct:
 
 ```sql
--- in dim_pub_customer, after the real rows
-union all select '-1', cast(-1 as bigint), 'unknown'
-union all select '-2', cast(-2 as bigint), 'not applicable'
+-- in dim_pub_customer, unioned after the real rows
+special_members as (
+    select
+        '-1'                  as customer_key,
+        cast(null as bigint)  as customer_id,
+        cast(null as varchar) as city
+    union all
+    select
+        '-2'                  as customer_key,
+        cast(null as bigint)  as customer_id,
+        cast(null as varchar) as city
+)
 
 -- in the DWD
 case
@@ -217,8 +227,13 @@ end as customer_key
 Incorrect:
 
 ```sql
--- in dim_pub_customer, after the real rows
-union all select cast(-1 as bigint), cast(-1 as bigint), 'unknown'   -- key is bigint, hash keys are varchar
+-- in dim_pub_customer, unioned after the real rows
+special_members as (
+    select
+        cast(-1 as bigint)    as customer_key,   -- key is bigint, hash keys are varchar
+        cast(null as bigint)  as customer_id,
+        cast(null as varchar) as city
+)
 ```
 
 Source: Kimball (special rows) · Spec §7
