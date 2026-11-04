@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 import pytest
-from conftest import CATALOG, drop_schemas, query, run_dbt
+from helpers import CATALOG, drop_schemas, query, run_dbt
 
 PROJECT = Path(__file__).resolve().parent / "dbt_capabilities"
 SCHEMA = "itest_cap"

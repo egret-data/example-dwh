@@ -6,7 +6,7 @@ Tests run in file order and share state: each builds on the previous load.
 from datetime import date
 
 import pytest
-from conftest import CATALOG, MAIN_PROJECT, drop_schemas, query, run_dbt
+from helpers import CATALOG, MAIN_PROJECT, drop_schemas, query, run_dbt
 
 SCHEMA = "itest"
 ODS = f'{CATALOG}."{SCHEMA}_ods"'
