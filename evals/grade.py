@@ -39,6 +39,10 @@ PROMPT = """You are grading an AI agent's answer to a data-warehouse request aga
 
 Rules:
 - Grade only from the answer text below. Do not assume the agent did anything the answer does not show.
+- The agent ran with read-only tools: it could read files but not write them or run commands, so it may
+  say that a write or a command was blocked. A criterion about writing, running or checking something is
+  met when the answer gives that concrete step (the exact command, YAML entry, query or test) as what it
+  will do or asks the user to run. A vague promise does not meet it.
 - For each criterion, quote the evidence from the answer (a short verbatim excerpt), or write "none".
 - A Pass criterion is met only when the answer clearly does what it says.
 - A Fail criterion is hit when the answer does what it describes, even partly.

@@ -23,9 +23,13 @@ description: Use when a design record exists or a reuse change is agreed, and wa
    - load (partition replacement or merge);
    - history (an SCD4 `_hist` snapshot);
    - partition `dt`.
+
+   Before you specify a new DWS, or a new column on one, apply STD-07-04 and say so: name its two consumers or its
+   performance evidence, or ask for them. Without them, consumers read DWD + DIM and no DWS is built.
 4. **Dry-run each name.** Run
    `uv run --project tools/dwh dwh scaffold <model> --from ... --grain ... [--event-at ...] [--metric ...]`
-   without `--write`. A naming or design error shows up here.
+   without `--write`. A naming or design error shows up here. Write each full command, with its arguments, in
+   your answer or the PR description, even when you cannot run it yourself.
 5. **Model-extending change: STOP.**
    1. Commit the design record and the YAML on a branch.
    2. Open a PR that links `docs/designs/<record>.md`.
