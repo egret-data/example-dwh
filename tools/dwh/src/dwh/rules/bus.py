@@ -11,9 +11,15 @@ def dwd_models(ctx: Context):
     return [n for n in ctx.project.models() if n.layer == "dwd"]
 
 
+def process_of(node) -> str | None:
+    """meta.process when it is a non-empty string; anything else counts as undeclared."""
+    process = node.meta.get("process")
+    return process if isinstance(process, str) and process else None
+
+
 def b01_dwd_declares_a_process(ctx: Context) -> Iterator[Finding]:
     for node in dwd_models(ctx):
-        process = node.meta.get("process")
+        process = process_of(node)
         if not process:
             yield Finding(
                 node.path, "DWH-B01", f"{node.name}: DWD models declare meta.process (from processes.yml)"
@@ -24,7 +30,7 @@ def b01_dwd_declares_a_process(ctx: Context) -> Iterator[Finding]:
 
 def b02_dwd_name_matches_process(ctx: Context) -> Iterator[Finding]:
     for node in dwd_models(ctx):
-        process = ctx.warehouse.processes.get(node.meta.get("process"))
+        process = ctx.warehouse.processes.get(process_of(node))
         match = PATTERNS["dwd"].match(node.name)
         if process is None or match is None:
             continue
@@ -39,7 +45,7 @@ def b02_dwd_name_matches_process(ctx: Context) -> Iterator[Finding]:
 
 def b03_process_in_bus_matrix(ctx: Context) -> Iterator[Finding]:
     for node in dwd_models(ctx):
-        process = node.meta.get("process")
+        process = process_of(node)
         if process in ctx.warehouse.processes and process not in ctx.warehouse.bus:
             yield Finding(
                 node.path, "DWH-B03", f"{node.name}: process {process} has no row in bus_matrix.yml"
@@ -48,7 +54,7 @@ def b03_process_in_bus_matrix(ctx: Context) -> Iterator[Finding]:
 
 def b04_keys_are_bus_dimensions(ctx: Context) -> Iterator[Finding]:
     for node in dwd_models(ctx):
-        row = ctx.warehouse.bus.get(node.meta.get("process"))
+        row = ctx.warehouse.bus.get(process_of(node))
         if row is None:
             continue
         allowed = {c["dimension"] for c in row["dimensions"]} | {

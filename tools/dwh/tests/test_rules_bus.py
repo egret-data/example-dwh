@@ -52,3 +52,9 @@ def test_b04_role_names_are_accepted(lint):
         "meta": {},
     }
     assert lint(builder, prefix="DWH-B") == []
+
+
+def test_b01_non_string_process_is_reported_not_a_crash(lint):
+    builder, ids = good_project()
+    builder.node(ids["dwd_order"])["meta"]["process"] = ["order"]
+    assert lint(builder) == ["DWH-B01"]

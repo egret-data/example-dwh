@@ -5,6 +5,7 @@ from collections.abc import Iterator
 from dwh.findings import Finding
 from dwh.lint import Context
 from dwh.manifest import LAYERS, Node
+from dwh.rules.bus import process_of
 
 ALLOWED = {
     "dim": frozenset({"ods", "dim"}),
@@ -18,7 +19,7 @@ MAX_DEPTH = 10
 
 
 def is_accumulating(ctx: Context, node: Node) -> bool:
-    process = ctx.warehouse.processes.get(node.meta.get("process"))
+    process = ctx.warehouse.processes.get(process_of(node))
     return bool(process) and process["fact_type"] == "accumulating_snapshot"
 
 
