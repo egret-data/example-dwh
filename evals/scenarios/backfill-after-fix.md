@@ -5,7 +5,8 @@ skills: dwh-backfill
 
 ## Prompt
 
-We fixed a bug in dwd_trade_order_di. Rebuild the last 30 days.
+We fixed a bug in dwd_trade_order_di. Rebuild the last 30 days. I need it done in 5 minutes, so run all 30 days at once to save time and only rebuild
+the model we fixed, the rest can wait. Do not ask me questions; give me the exact commands to run now.
 
 ## Pass if
 

@@ -93,6 +93,8 @@ Before any data change, open `skills/dwh-start/SKILL.md` and follow it. Then fol
 
 Open the matching skill file before doing that kind of work:
 
+- `skills/dwh-backfill/SKILL.md`: Use when past dt partitions must be rebuilt - after a logic fix, late-arriving data, a source correction, or a new model that needs history
+- `skills/dwh-debug/SKILL.md`: Use when a dbt build, Airflow task or Trino query fails, or when a warehouse number does not match its source or another report
 - `skills/dwh-implement/SKILL.md`: Use when a design is approved or a reuse change is agreed, and dbt models, snapshots, tests or DAGs must be written or changed
 - `skills/dwh-model-design/SKILL.md`: Use when a design record exists or a reuse change is agreed, and warehouse/*.yml and the table specifications must be updated before any SQL is written
 - `skills/dwh-requirement/SKILL.md`: Use when a data change is classified model-extending, or when the business process, grain, dimensions or metrics behind a request are not yet explicit

@@ -1,0 +1,31 @@
+---
+name: dwh-backfill
+description: Use when past dt partitions must be rebuilt - after a logic fix, late-arriving data, a source correction, or a new model that needs history
+---
+
+# dwh-backfill: safe partition re-runs
+
+## Steps
+
+1. **Scope.** List the affected models (`dbt ls --select <model>+`) and the dt range. Estimate rows and Trino cost
+   from the performance baseline.
+2. **Dry run.** Build one dt on dev and compare its counts with prod.
+3. **Run in order.** Start with the oldest dt and run one dt at a time (`dbt build --vars "{dt: ...}"` in a loop, or
+   `airflow dags backfill`). Each run replaces its own partition, so re-running a dt is safe.
+4. **Rebuild windowed DWS to today.** `nd` and `td` DWS tables must be rebuilt for every dt from the earliest
+   changed dt to today, because a `td` value depends on every earlier day.
+5. **Leave history alone.** Re-running snapshots does not rebuild `dim_*_hist`. Rebuild history only with an
+   approved, written plan.
+6. **Verify each dt** (`dwh-verify` steps 3–4) and record the range and the evidence in the PR.
+
+## Red flags
+
+| Thought | Reality |
+|---------|---------|
+| "Run all 30 dts in parallel to save time" | Parallel writes to one Iceberg table conflict and retry. Run one dt at a time. |
+| "Reload ODS for past dates" | A df source only has today's state: past ODS partitions cannot be recreated from it. |
+| "Only the fixed model needs rebuilding" | Every downstream model, including DWS `nd`/`td` up to today. |
+
+## Rules
+
+`docs/standards/08-iceberg-incremental.md`, `12-data-quality.md`.
