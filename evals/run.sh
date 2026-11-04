@@ -27,11 +27,14 @@ FIXTURE=$(sed -n 's/^fixture: *//p' "$SCENARIO" | head -1)
 if [ -n "$FIXTURE" ]; then
   python3 -c 'import shutil, sys; shutil.copytree(sys.argv[1], sys.argv[2], dirs_exist_ok=True)' \
     "$REPO/evals/fixtures/$FIXTURE" "$WORK/repo"
-  # Commit the fixture in the throwaway worktree so the agent sees a clean tree.
-  git -C "$WORK/repo" add -A
-  git -C "$WORK/repo" -c user.name=dwh-eval -c user.email=dwh-eval@example.invalid \
-    commit --quiet --no-verify -m "eval fixture: $FIXTURE"
 fi
+# The agent must not read its own grading rubric or the skill texts in the plans and verification records.
+git -C "$WORK/repo" rm -r -q --ignore-unmatch evals docs/en/plans docs/en/verification
+# Commit the fixture and the removal in the throwaway worktree so the agent sees a clean tree.
+git -C "$WORK/repo" add -A
+git -C "$WORK/repo" diff --cached --quiet \
+  || git -C "$WORK/repo" -c user.name=dwh-eval -c user.email=dwh-eval@example.invalid \
+    commit --quiet --no-verify -m "eval fixture: ${FIXTURE:-none}"
 PROMPT=$(sed -n '/^## Prompt/,/^## /{/^## /d;p;}' "$SCENARIO")
 
 mkdir -p "$REPO/evals/results"
