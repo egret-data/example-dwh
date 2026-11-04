@@ -74,7 +74,8 @@ def test_test_tasks_do_not_pick_up_tests_of_models_built_by_another_dag(dagbag):
 
 def test_every_task_writes_its_dbt_artifacts_to_its_own_target_path(dagbag):
     # Cosmos reads the asset outlets from run_results.json under DBT_TARGET_PATH. A path shared by the
-    # tasks of a run lets concurrent tasks read each other's results and emit events for the wrong asset (measured).
+    # tasks of a run lets concurrent tasks read each other's results and emit events for the wrong asset
+    # (measured).
     for dag_id in ("dbt_ods_shop", "dbt_pub", "dbt_trade"):
         for task in dagbag.get_dag(dag_id).tasks:
             assert "{{ ti.task_id }}" in task.env["DBT_TARGET_PATH"], task.task_id
