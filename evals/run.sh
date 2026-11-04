@@ -27,6 +27,10 @@ FIXTURE=$(sed -n 's/^fixture: *//p' "$SCENARIO" | head -1)
 if [ -n "$FIXTURE" ]; then
   python3 -c 'import shutil, sys; shutil.copytree(sys.argv[1], sys.argv[2], dirs_exist_ok=True)' \
     "$REPO/evals/fixtures/$FIXTURE" "$WORK/repo"
+  # Commit the fixture in the throwaway worktree so the agent sees a clean tree.
+  git -C "$WORK/repo" add -A
+  git -C "$WORK/repo" -c user.name=dwh-eval -c user.email=dwh-eval@example.invalid \
+    commit --quiet --no-verify -m "eval fixture: $FIXTURE"
 fi
 PROMPT=$(sed -n '/^## Prompt/,/^## /{/^## /d;p;}' "$SCENARIO")
 
