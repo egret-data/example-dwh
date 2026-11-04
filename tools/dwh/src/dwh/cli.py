@@ -80,6 +80,9 @@ def cmd_design_gate(args: argparse.Namespace) -> int:
 
 
 def cmd_check_standards(args: argparse.Namespace) -> int:
+    if not args.standards.is_dir():
+        print(f"dwh: {args.standards} not found", file=sys.stderr)
+        return 2
     return report(check_standards(args.standards, require_all=args.require_all))
 
 

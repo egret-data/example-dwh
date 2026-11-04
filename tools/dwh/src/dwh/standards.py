@@ -47,7 +47,10 @@ ALIBABA_SLUGS = frozenset(
 HEADING = re.compile(
     r"^### (?P<id>STD-(?P<file>\d\d)-(?P<n>\d\d)) (?P<title>\S.*) \((?P<level>MUST|SHOULD)\)$"
 )
-CODE = re.compile(r"\bDWH-[A-Z]\d\d\b")
+CODE_TOKEN = re.compile(r"(?i)\bdwh-\S+")
+STD_LIKE = re.compile(r"^#{1,6}\s*STD-")
+KIMBALL = re.compile(r"^Kimball\b")
+ALIBABA = re.compile(r"^Alibaba (?P<slug>\S+)( .*)?$")
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,11 @@ def split_rules(text: str) -> tuple[list[Rule], list[str]]:
     for line in text.splitlines():
         if line.startswith("```"):
             in_fence = not in_fence
+        if not in_fence and STD_LIKE.match(line) and not HEADING.match(line):
+            close()
+            current, body = None, []
+            bad.append(line)
+            continue
         if not in_fence and (line.startswith("### ") or line.startswith("## ")):
             close()
             current, body = None, []
@@ -100,20 +108,30 @@ def source_problem(lines: tuple[str, ...]) -> str | None:
     sources = [line for line in lines if line.startswith("Source: ")]
     if not sources:
         return "no Source: line"
-    parts = [part.strip() for part in sources[0].removeprefix("Source: ").split("·")]
-    for part in parts:
-        if part.startswith("Alibaba"):
-            slug = part.removeprefix("Alibaba").strip().split(" ")[0]
-            if slug not in ALIBABA_SLUGS:
-                return f"unknown Alibaba page {slug!r}"
-    if not any(p.startswith(("Kimball", "Alibaba ", "Spec §")) for p in parts):
-        return "Source: must cite Kimball, Alibaba <slug> or Spec §"
+    for part in (p.strip() for p in sources[0].removeprefix("Source: ").split("·")):
+        if KIMBALL.match(part) or part.startswith("Spec §"):
+            continue
+        alibaba = ALIBABA.match(part)
+        if alibaba is None:
+            return f"source part {part!r} must be Kimball, Alibaba <slug> or Spec §"
+        if alibaba["slug"] not in ALIBABA_SLUGS:
+            return f"unknown Alibaba page {alibaba['slug']!r}"
     return None
 
 
-def cited_codes(lines: tuple[str, ...]) -> set[str]:
+def checked_by(lines: tuple[str, ...]) -> tuple[set[str], list[str]]:
+    """Registered codes cited by the rule's `Checked by:` line, and the problems found in it."""
     checked = [line for line in lines if line.startswith("Checked by: ")]
-    return set(CODE.findall(checked[0])) if checked else set()
+    problems = ["more than one Checked by line"] if len(checked) > 1 else []
+    cited: set[str] = set()
+    for line in checked:
+        for token in CODE_TOKEN.findall(line):
+            token = token.rstrip(",.")
+            if token in CODES:
+                cited.add(token)
+            else:
+                problems.append(f"unknown lint code {token}")
+    return cited, problems
 
 
 def check_file(path: Path, seen: set[str]) -> Iterator[Finding | str]:
@@ -124,6 +142,8 @@ def check_file(path: Path, seen: set[str]) -> Iterator[Finding | str]:
         yield Finding(
             where, "DWH-R02", f"malformed rule heading {heading!r}: use '### STD-NN-MM <title> (MUST|SHOULD)'"
         )
+    if not rules and not bad:
+        yield Finding(where, "DWH-R02", "no rules: a standards file needs '### STD-NN-MM ...' rules")
     for rule in rules:
         if rule.file_number != path.name[:2]:
             yield Finding(
@@ -138,11 +158,10 @@ def check_file(path: Path, seen: set[str]) -> Iterator[Finding | str]:
         problem = source_problem(rule.lines)
         if problem:
             yield Finding(where, "DWH-R04", f"{rule.id}: {problem}")
-        for code in sorted(cited_codes(rule.lines)):
-            if code not in CODES:
-                yield Finding(where, "DWH-R05", f"{rule.id}: unknown lint code {code}")
-            else:
-                yield code
+        cited, problems = checked_by(rule.lines)
+        for problem in problems:
+            yield Finding(where, "DWH-R05", f"{rule.id}: {problem}")
+        yield from sorted(cited)
 
 
 def check_standards(root: Path, require_all: bool = False) -> list[Finding]:

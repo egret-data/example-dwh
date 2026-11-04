@@ -103,3 +103,57 @@ def test_cli_check_standards(tmp_path, capsys):
 
     assert rc == 1
     assert "DWH-R02" in capsys.readouterr().out
+
+
+def test_r02_unfenced_std_heading_variants_are_not_dropped(tmp_path):
+    for bad in ("###STD-04-01 Durable keys (MUST)", "#### STD-04-01 Durable keys (MUST)"):
+        write(tmp_path, "04-dimensions.md", GOOD_RULE.replace("### STD-04-01 Durable keys (MUST)", bad))
+        assert codes(check_standards(tmp_path)) == ["DWH-R02"], bad
+    write(tmp_path, "04-dimensions.md", GOOD_RULE.replace("### STD-04-01", "## STD-04-01"))
+    assert codes(check_standards(tmp_path)) == ["DWH-R02"]
+
+
+def test_r02_file_without_rules(tmp_path):
+    write(tmp_path, "04-dimensions.md", "")
+    assert codes(check_standards(tmp_path)) == ["DWH-R02"]
+
+
+def test_r05_malformed_checked_by_token(tmp_path):
+    for bad in ("DWH-T4", "DWH-T004", "dwh-t04"):
+        write(tmp_path, "04-dimensions.md", GOOD_RULE.replace("DWH-T04", bad))
+        assert codes(check_standards(tmp_path)) == ["DWH-R05"], bad
+
+
+def test_r05_two_checked_by_lines(tmp_path):
+    write(tmp_path, "04-dimensions.md", GOOD_RULE + "Checked by: DWH-T04\n")
+    assert codes(check_standards(tmp_path)) == ["DWH-R05"]
+
+
+def test_r04_every_source_part_is_validated(tmp_path):
+    for bad in ("Kimball · my blog", "Alibaba dim-layer, data-warehouse-detail-layer"):
+        good_source = "Kimball (The Data Warehouse Toolkit, 3rd ed.) · Alibaba dim-layer · Spec §7"
+        rule = GOOD_RULE.replace(good_source, bad)
+        write(tmp_path, "04-dimensions.md", rule)
+        assert codes(check_standards(tmp_path)) == ["DWH-R04"], bad
+
+
+def test_should_rule_is_clean(tmp_path):
+    write(tmp_path, "04-dimensions.md", GOOD_RULE.replace("(MUST)", "(SHOULD)"))
+    assert check_standards(tmp_path) == []
+
+
+def test_rule_without_checked_by_is_clean(tmp_path):
+    write(tmp_path, "04-dimensions.md", GOOD_RULE.replace("Checked by: DWH-T04, DWH-B04\n", ""))
+    assert check_standards(tmp_path) == []
+
+
+def test_missing_file_without_require_all_is_silent(tmp_path):
+    tmp_path.mkdir(exist_ok=True)
+    assert check_standards(tmp_path) == []
+
+
+def test_cli_missing_standards_dir_exits_2(tmp_path, capsys):
+    for extra in ([], ["--require-all"]):
+        rc = main(["check-standards", "--standards", str(tmp_path / "nope"), *extra])
+        assert rc == 2
+        assert "not found" in capsys.readouterr().err
