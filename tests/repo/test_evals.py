@@ -76,6 +76,12 @@ def test_parse_verdict_accepts_json_in_a_fenced_block():
     assert grade.parse_verdict(text) == {"pass": [], "fail": []}
 
 
+def test_parse_verdict_ignores_text_after_the_object():
+    text = '{"pass": [], "fail": []}\nNote: the {answer} was short.'
+
+    assert grade.parse_verdict(text) == {"pass": [], "fail": []}
+
+
 def test_parse_verdict_rejects_text_without_json():
     with pytest.raises(ValueError):
         grade.parse_verdict("All criteria look fine to me.")

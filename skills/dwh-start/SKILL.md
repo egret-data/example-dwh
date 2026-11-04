@@ -32,6 +32,7 @@ Every data change starts here. Classify it, say the class, then follow its path.
 | "It's just one column" | A column on a fact can change its grain or add a dimension. |
 | "This metric is obviously new" | Search `metrics.yml` first: most "new" metrics are derived from an existing atomic metric. |
 | "I'll classify after I sketch the SQL" | The class decides whether SQL is allowed yet. |
+| "It's for a dashboard, so it needs a DWS table (or a new DWS column)" | Apply STD-07-04 and say so: a DWS needs two consumers or performance evidence. Otherwise BI reads DWD + DIM. |
 
 ## Rules
 

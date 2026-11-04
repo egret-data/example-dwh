@@ -106,12 +106,12 @@ def parse_verdict(text: str) -> dict:
     """
     fenced = re.search(r"```(?:json)?\s*\n(.*?)\n```", text, re.DOTALL)
     candidates = [fenced.group(1)] if fenced else []
-    start, end = text.find("{"), text.rfind("}")
-    if start != -1 and end > start:
-        candidates.append(text[start : end + 1])
+    # Otherwise decode from each opening brace, ignoring any text after the object.
+    candidates += [text[i:] for i, char in enumerate(text) if char == "{"]
+    decoder = json.JSONDecoder()
     for candidate in candidates:
         try:
-            verdict = json.loads(candidate)
+            verdict, _ = decoder.raw_decode(candidate.strip())
         except json.JSONDecodeError:
             continue
         if isinstance(verdict, dict):
@@ -153,7 +153,11 @@ def grade(scenario: Path, answer: Path) -> dict:
         fail_list="\n".join(f"{i}. {c}" for i, c in enumerate(parsed["fail"], 1)),
         answer=answer.read_text().strip(),
     )
-    verdict = parse_verdict(ask_judge(prompt))
+    try:
+        verdict = parse_verdict(ask_judge(prompt))
+    except ValueError:
+        # The judge occasionally emits malformed JSON; one retry, then fail loudly.
+        verdict = parse_verdict(ask_judge(prompt))
     result = {
         "pass": entries(verdict, "pass", "met", parsed["pass"]),
         "fail": entries(verdict, "fail", "hit", parsed["fail"]),
