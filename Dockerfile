@@ -15,10 +15,12 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 COPY --chown=airflow requirements-dbt.txt /tmp/requirements-dbt.txt
 RUN /opt/dbt-venv/bin/pip install --no-cache-dir -r /tmp/requirements-dbt.txt
 
+# DBT_SEND_ANONYMOUS_USAGE_STATS=false: no .user.yml cookie written into the read-only profiles dir.
 ENV DBT_EXECUTABLE_PATH=/opt/dbt-venv/bin/dbt \
     DBT_PACKAGES_INSTALL_PATH=/opt/dbt_packages \
     DBT_TARGET_PATH=/tmp/dbt/target \
-    DBT_LOG_PATH=/tmp/dbt/logs
+    DBT_LOG_PATH=/tmp/dbt/logs \
+    DBT_SEND_ANONYMOUS_USAGE_STATS=false
 
 # Bake dbt packages; git-sync delivers models but never runs `dbt deps`.
 # Runs as root: `dbt deps` rmtree()s the install dir itself, which needs write access to /opt.

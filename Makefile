@@ -28,10 +28,10 @@ dbt-parse:
 	$(RUN) 'cd dags/dbt && $$DBT_EXECUTABLE_PATH parse'
 
 test-integration:
-	$(RUN) "/opt/dbt-venv/bin/python -m pytest tests/integration -v"
+	$(RUN) "/opt/dbt-venv/bin/python -m pytest -p no:cacheprovider tests/integration -v"
 
 test-dags:
-	$(RUN) "airflow db migrate >/dev/null && python -m pytest tests/dags -v"
+	$(RUN) "airflow db migrate >/dev/null && python -m pytest -p no:cacheprovider tests/dags -v"
 
 e2e:
 	./dev/e2e.sh
