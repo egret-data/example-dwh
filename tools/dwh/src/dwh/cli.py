@@ -11,6 +11,7 @@ from dwh.design_gate import added_concepts, check_gate, load_warehouse_at
 from dwh.findings import Finding
 from dwh.lint import Context, run_lint
 from dwh.manifest import load_manifest
+from dwh.standards import check_standards
 from dwh.validate import validate
 from dwh.warehouse import load_warehouse
 
@@ -78,6 +79,10 @@ def cmd_design_gate(args: argparse.Namespace) -> int:
     return report(check_gate(added, body=pull_request.get("body") or "", labels=labels, repo_root=repo))
 
 
+def cmd_check_standards(args: argparse.Namespace) -> int:
+    return report(check_standards(args.standards, require_all=args.require_all))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="dwh", description="example-dwh design metadata tools")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -107,6 +112,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--out", type=Path, default=Path("site"))
     p.add_argument("--dbt-docs", type=Path, default=None, help="dbt's static_index.html to publish alongside")
     p.set_defaults(func=cmd_catalog)
+
+    p = sub.add_parser(
+        "check-standards", help="check the rulebook format and its lint-code citations (DWH-R)"
+    )
+    p.add_argument("--standards", type=Path, default=Path("docs/standards"))
+    p.add_argument(
+        "--require-all", action="store_true", help="also require every file and every code citation"
+    )
+    p.set_defaults(func=cmd_check_standards)
 
     return parser
 

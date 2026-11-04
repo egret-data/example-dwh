@@ -2,7 +2,7 @@ COMPOSE := docker compose -f dev/compose.yml
 DWH := uv run --locked --project tools/dwh dwh
 RUN := $(COMPOSE) run --rm airflow
 
-.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog
+.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards
 
 dev-up:
 	$(COMPOSE) up -d trino
@@ -49,6 +49,9 @@ lock:
 
 dwh-test:
 	uv run --locked --project tools/dwh pytest -p no:cacheprovider tools/dwh/tests -v
+
+check-standards:
+	$(DWH) check-standards --standards docs/standards --require-all
 
 validate:
 	$(DWH) validate --warehouse warehouse
