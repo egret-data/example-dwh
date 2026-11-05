@@ -100,8 +100,9 @@ def test_scd4_dimension_comes_with_its_hist_snapshot(wh):
     snapshot = yaml.safe_load(files["snapshots/dim_pub_customer_hist.yml"])["snapshots"][0]
     assert snapshot["relation"] == "ref('dim_pub_customer')"
     assert snapshot["config"]["unique_key"] == ["customer_key"]
-    assert snapshot["config"]["strategy"] == "check"
-    assert snapshot["config"]["check_cols"] == ["city"]
+    assert snapshot["config"]["strategy"] == "timestamp"
+    assert snapshot["config"]["updated_at"] == "updated_at"
+    assert "check_cols" not in snapshot["config"]
     assert snapshot["config"]["snapshot_meta_column_names"] == {
         "dbt_valid_from": "valid_from",
         "dbt_valid_to": "valid_to",
@@ -111,6 +112,8 @@ def test_scd4_dimension_comes_with_its_hist_snapshot(wh):
 def test_scd1_dimension_has_no_snapshot(wh):
     files = scaffold("dim_trade_shop", wh, project_dir="", upstream=["ods_shop_customers_df"])
     assert set(files) == {"models/dim/trade/dim_trade_shop.sql", "models/dim/trade/dim_trade_shop.yml"}
+    assert "updated_at" not in files["models/dim/trade/dim_trade_shop.sql"]
+    assert "updated_at" not in columns(model_of(files["models/dim/trade/dim_trade_shop.yml"]))
 
 
 @pytest.mark.parametrize(
@@ -193,6 +196,22 @@ def test_scaffolded_dws_passes_every_lint_family(wh, lint):
     assert lint(builder) == []
 
 
+def test_dws_metric_types_follow_the_measure_scale(wh):
+    files = scaffold(
+        "dws_trade_customer_1d",
+        wh,
+        project_dir="",
+        grain=["customer_key"],
+        metrics=["order_amt_sum_1d", "order_cnt_1d"],
+        upstream=["dwd_trade_order_di"],
+    )
+
+    cols = columns(model_of(files["models/dws/trade/dws_trade_customer_1d.yml"]))
+    # Trino: sum(decimal(18, 2)) is decimal(38, 2); a scale-4 contract fails on first build.
+    assert cols["order_amt_sum_1d"]["data_type"] == "decimal(38, 2)"
+    assert cols["order_cnt_1d"]["data_type"] == "bigint"
+
+
 def test_nd_metric_filters_by_modifier_and_the_window_goes_in_where(wh):
     files = scaffold(
         "dws_trade_customer_nd",
@@ -207,14 +226,19 @@ def test_nd_metric_filters_by_modifier_and_the_window_goes_in_where(wh):
     assert re.search(
         r"sum\(order_amt\) filter \(\s*where channel = 'app'\s*\)\s+as app_order_amt_sum_30d", sql
     )
-    assert f"where dt > {TODAY} - interval '30' day\n" in sql
+    # Bounded on both sides: a backfill of an old dt must not read later partitions (STD-08-04).
+    assert f"where\n    dt > {TODAY} - interval '30' day\n    and dt <= {TODAY}\ngroup by" in sql
 
 
 @pytest.mark.parametrize(
     ("name", "metrics", "where"),
     [
-        ("dws_trade_customer_1w", ["order_amt_sum_1w"], f"dt > {TODAY} - interval '7' day"),
-        ("dws_trade_customer_td", ["order_amt_sum_td"], f"dt <= {TODAY}"),
+        (
+            "dws_trade_customer_1w",
+            ["order_amt_sum_1w"],
+            f"\n    dt > {TODAY} - interval '7' day\n    and dt <= {TODAY}",
+        ),
+        ("dws_trade_customer_td", ["order_amt_sum_td"], f" dt <= {TODAY}"),
     ],
 )
 def test_other_periods_put_their_window_in_where(make_warehouse, name, metrics, where):
@@ -232,7 +256,7 @@ def test_other_periods_put_their_window_in_where(make_warehouse, name, metrics, 
     warehouse = load_warehouse(make_warehouse(mutate=add_metric))
     files = scaffold(name, warehouse, project_dir="", grain=["customer_key"], metrics=metrics, upstream=["x"])
     sql = files[f"models/dws/trade/{name}.sql"]
-    assert f"where {where}\n" in sql
+    assert f"where{where}\ngroup by" in sql
     assert "filter" not in sql
 
 
@@ -241,12 +265,35 @@ def test_dwd_hashes_the_role_column_or_the_natural_key(wh):
         "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="created_at"
     )
     sql = order["models/dwd/trade/dwd_trade_order_di.sql"]
-    assert "generate_surrogate_key(['order_date']) }}" in sql
-    assert "generate_surrogate_key(['customer_id']) }}" in sql
+    assert "generate_surrogate_key(['order_date'])" not in sql
+    assert re.search(
+        r"when customer_id is null then '-1'\s+"
+        r"else \{\{ dbt_utils.generate_surrogate_key\(\['customer_id'\]\) \}\}"
+        r"\s+end\s+as customer_key",
+        sql,
+    )
     assert (
-        "-- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. order_date)"
+        "-- Durable keys: hash of the dimension's natural key (a role hashes its own column, e.g. ship_date;"
         in sql
     )
+    assert "a single date role is derived from the event column)" in sql
+
+
+def test_event_dwd_with_two_date_roles_hashes_each_role_column(make_warehouse):
+    def add_ship_date(files):
+        files["bus_matrix"]["bus_matrix"][0]["dimensions"].append({"dimension": "date", "role": "ship_date"})
+
+    wh = load_warehouse(make_warehouse(mutate=add_ship_date))
+    sql = scaffold(
+        "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="created_at"
+    )["models/dwd/trade/dwd_trade_order_di.sql"]
+
+    assert "generate_surrogate_key(['order_date'])" in sql
+    assert "generate_surrogate_key(['ship_date'])" in sql
+    assert "Asia/Ho_Chi_Minh" not in sql
+    versions = sql.split("with versions as (", 1)[1].split("from {{ ref('x') }}", 1)[0]
+    for name in ("order_date", "ship_date"):
+        assert re.search(rf"^\s+{name},$", versions, re.MULTILINE), name
 
 
 def test_dwd_maps_a_null_natural_key_to_the_unknown_member(wh):
@@ -254,7 +301,7 @@ def test_dwd_maps_a_null_natural_key_to_the_unknown_member(wh):
         "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="created_at"
     )
     sql = files["models/dwd/trade/dwd_trade_order_di.sql"]
-    for key, natural in [("customer_key", "customer_id"), ("order_date_key", "order_date")]:
+    for key, natural in [("customer_key", "customer_id")]:
         case = (
             f"    case\n"
             f"        when {natural} is null then '-1'\n"
@@ -264,8 +311,47 @@ def test_dwd_maps_a_null_natural_key_to_the_unknown_member(wh):
         assert re.search(rf"{re.escape(case)}\s+as {key},", sql), key
     # The versions CTE lists each key's source column, the event column and dt, nothing else.
     versions = sql.split("with versions as (", 1)[1].split("from {{ ref('x') }}", 1)[0]
-    for name in ("order_id", "order_date", "customer_id", "shop_id", "created_at", "dt"):
+    for name in ("order_id", "customer_id", "shop_id", "created_at", "dt"):
         assert re.search(rf"^\s+{name},$", versions, re.MULTILINE), name
+
+
+def test_special_members_carry_text_labels(wh):
+    sql = scaffold("dim_pub_customer", wh, project_dir="", upstream=["ods_shop_customers_df"])[
+        "models/dim/pub/dim_pub_customer.sql"
+    ]
+    assert "'Unknown'" in sql
+    assert "'Not applicable'" in sql
+    assert "timestamp '1900-01-01 00:00:00 UTC'" in sql
+
+
+def test_scd4_dimension_carries_updated_at_and_snapshots_by_timestamp(wh):
+    files = scaffold("dim_pub_customer", wh, project_dir="", upstream=["ods_shop_customers_df"])
+
+    model = model_of(files["models/dim/pub/dim_pub_customer.yml"])
+    assert columns(model)["updated_at"]["data_type"] == "timestamp(6) with time zone"
+    snapshot = yaml.safe_load(files["snapshots/dim_pub_customer_hist.yml"])["snapshots"][0]
+    assert snapshot["config"]["strategy"] == "timestamp"
+    assert snapshot["config"]["updated_at"] == "updated_at"
+    assert "check_cols" not in snapshot["config"]
+
+
+def test_event_dwd_derives_its_single_date_role_from_the_event_column(wh):
+    sql = scaffold(
+        "dwd_trade_order_di",
+        wh,
+        project_dir="",
+        grain=["order_id"],
+        upstream=["ods_shop_orders_di"],
+        event_at="created_at",
+    )["models/dwd/trade/dwd_trade_order_di.sql"]
+
+    assert re.search(
+        r"case\s+when created_at is null then '-1'\s+else \{\{ dbt_utils.generate_surrogate_key\(\s*"
+        r"\[\"cast\(created_at at time zone 'Asia/Ho_Chi_Minh' as date\)\"\]\s*\) \}\}"
+        r"\s+end\s+as order_date_key",
+        sql,
+    )
+    assert "['order_date']" not in sql
 
 
 def test_accumulating_snapshot_dwd_is_written_by_hand(wh):
@@ -288,7 +374,8 @@ def test_dimension_unions_the_special_members_with_a_null_natural_key(wh):
     assert re.search(r"'-1'\s+as customer_key", sql)
     assert re.search(r"'-2'\s+as customer_key", sql)
     assert re.search(r"cast\(null as bigint\)\s+as customer_id", sql)
-    assert re.search(r"cast\(null as varchar\)\s+as city", sql)
+    assert re.search(r"'Unknown'\s+as city", sql)
+    assert re.search(r"'Not applicable'\s+as city", sql)
     assert "union all" in sql
     assert "select *" not in sql
     model = model_of(files["models/dim/pub/dim_pub_customer.yml"])
@@ -449,3 +536,33 @@ def test_cli_scaffold_prints_writes_and_rejects(make_warehouse, capsys, tmp_path
     assert "--event-at is required" in capsys.readouterr().err
     assert main([*dwd, "--event-at", "created_at", "--warehouse", warehouse]) == 0
     assert "in_business_day_tz('created_at')" in capsys.readouterr().out
+
+
+def depends_on_lines(sql: str) -> list[str]:
+    return [line for line in sql.splitlines() if line.startswith("-- depends_on:")]
+
+
+def test_dwd_declares_every_dimension_its_relationships_tests_point_to(wh):
+    # Without a ref() the dimension is no ancestor, so `--indirect-selection buildable` drops the tests.
+    sql = scaffold(
+        "dwd_trade_order_di", wh, project_dir="", grain=["order_id"], upstream=["x"], event_at="created_at"
+    )["models/dwd/trade/dwd_trade_order_di.sql"]
+
+    assert depends_on_lines(sql) == [
+        "-- depends_on: {{ ref('dim_pub_customer') }}",
+        "-- depends_on: {{ ref('dim_pub_date') }}",
+        "-- depends_on: {{ ref('dim_trade_shop') }}",
+    ]
+
+
+def test_dws_declares_the_dimensions_of_its_grain_keys(wh):
+    sql = scaffold(
+        "dws_trade_customer_1d",
+        wh,
+        project_dir="",
+        grain=["customer_key"],
+        upstream=["dwd_trade_order_di"],
+        metrics=["order_amt_sum_1d"],
+    )["models/dws/trade/dws_trade_customer_1d.sql"]
+
+    assert depends_on_lines(sql) == ["-- depends_on: {{ ref('dim_pub_customer') }}"]

@@ -2,7 +2,7 @@ COMPOSE := docker compose -f dev/compose.yml
 DWH := uv run --locked --project tools/dwh dwh
 RUN := $(COMPOSE) run --rm airflow
 
-.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards sql-lint sql-fix sync-agents sync-agents-check pre-commit-install pre-commit eval
+.PHONY: dev-up dev-down smoke lint fmt image dbt-parse test-integration test-dags e2e test-repo lock dwh-test validate manifest dwh-lint catalog check-standards sql-lint sql-fix sync-agents sync-agents-check pre-commit-install pre-commit eval eval-all
 
 dev-up:
 	$(COMPOSE) up -d trino
@@ -91,4 +91,8 @@ pre-commit:
 	uvx pre-commit@4.7.0 run --all-files
 
 eval:
-	./evals/run.sh $(SCENARIO) $(if $(REF),--ref $(REF))
+	./evals/run.sh $(SCENARIO) $(if $(REF),--ref $(REF)) $(if $(WITHOUT_SKILLS),--without-skills)
+
+# Every scenario without and with skills at HEAD, graded by an LLM judge (paid claude -p calls).
+eval-all:
+	./evals/run-all.sh

@@ -1,6 +1,5 @@
 # Scenario: new-source-crm
 
-fixture: trade
 skills: dwh-start, dwh-requirement, dwh-model-design
 
 ## Prompt

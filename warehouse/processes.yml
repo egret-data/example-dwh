@@ -1,3 +1,18 @@
 # Business processes (spec §5). fact_type: transaction | periodic_snapshot | accumulating_snapshot.
 # grain is one sentence saying what one fact row is. Adding a process is model-extending.
-processes: []
+processes:
+  - name: order
+    domain: trade
+    description: A customer places an order in a shop.
+    fact_type: transaction
+    grain: One row per order, on the Asia/Ho_Chi_Minh day it was placed.
+  - name: payment
+    domain: trade
+    description: A payment for an order is captured.
+    fact_type: transaction
+    grain: One row per payment, on the Asia/Ho_Chi_Minh day it was captured.
+  - name: order_lifecycle
+    domain: trade
+    description: An order moves from placed to paid.
+    fact_type: accumulating_snapshot
+    grain: One row per order, updated when the order is paid.

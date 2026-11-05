@@ -1,6 +1,5 @@
 # Scenario: verify-before-done
 
-fixture: trade
 skills: dwh-verify
 
 ## Prompt

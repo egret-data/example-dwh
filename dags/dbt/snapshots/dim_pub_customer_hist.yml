@@ -1,0 +1,14 @@
+snapshots:
+- name: dim_pub_customer_hist
+  relation: ref('dim_pub_customer')
+  description: SCD4 history of dim_pub_customer; one row per version, valid_from and valid_to are the source change times.
+  config:
+    unique_key:
+    - customer_key
+    strategy: timestamp
+    updated_at: updated_at
+    tags:
+    - domain:pub
+    snapshot_meta_column_names:
+      dbt_valid_from: valid_from
+      dbt_valid_to: valid_to

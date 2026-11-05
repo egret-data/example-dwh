@@ -8,11 +8,14 @@ description: Use when a dbt build, Airflow task or Trino query fails, or when a 
 ## Steps
 
 1. **Reproduce.** Write down the exact dt, model, command and error, or the two numbers that disagree. Re-run once
-   to rule out a transient failure (Trino node loss, S3 throttling).
+   to rule out a transient failure (Trino node loss, S3 throttling). "Yesterday" is a Vietnam date: write it as
+   `dt = date 'YYYY-MM-DD'`.
 2. **Locate the layer.** Trace lineage downward, ADS → DWS → DWD → DIM/ODS → source (`dbt ls --select +<model>`).
    At each hop, compare row count and one amount for the same dt; between ODS and an event DWD, use the event-day
-   query of `12-data-quality.md` STD-12-03. The first hop that disagrees is where the defect is.
-3. **Classify the cause:**
+   query of `12-data-quality.md` STD-12-03. The first hop that disagrees is where the defect is. If you cannot run
+   queries, write out the count-and-sum query for each hop, for that dt, for the user to run.
+3. **Classify the cause.** Name the candidate causes for the symptom from this table in your answer, even
+   before the layer is located, so they can be checked at each hop:
 
    | Area | Typical causes |
    |------|----------------|
@@ -20,7 +23,7 @@ description: Use when a dbt build, Airflow task or Trino query fails, or when a 
    | Load | Vietnam-day window against the source timezone; watermark; delete handling |
    | Model | join fan-out; point-in-time SCD join; filters |
    | Metric | modifier or period definition |
-   | Orchestration | dt wiring (`DT_TEMPLATE`); Asset triggers |
+   | Orchestration | dt wiring (`DT_TEMPLATE`); Asset triggers; a collapsed asset run (`dt MULTIPLE:...`) |
 4. **Capture it in a test.** Write a failing test (dbt unit test or data test) that captures the cause, before
    fixing.
 5. **Fix at the lowest wrong layer.** Then rebuild every downstream model for the affected dts (`dwh-backfill`).
@@ -32,6 +35,7 @@ description: Use when a dbt build, Airflow task or Trino query fails, or when a 
 |---------|---------|
 | "Patch the dashboard/ADS to match" | The wrong number stays in DWD and spreads to every other consumer. |
 | "Retry until it's green" | A deterministic error fails again tomorrow. Find it. |
+| "`dt MULTIPLE:2026-11-01,2026-11-02`: retry the run" | It fails again: several ODS days collapsed into one asset-triggered run (STD-11-03). Rerun the DAG by hand once per listed day with `conf.dt`, oldest first (`dwh-backfill`). |
 | "Change the test's expected value" | The test was the evidence. Change it only when the expectation was wrong, and say why. |
 | "Fix quickly, investigate later" | A fix without a located cause is a guess. |
 

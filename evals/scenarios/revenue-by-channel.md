@@ -1,19 +1,20 @@
 # Scenario: revenue-by-channel
 
-fixture: trade
-skills: dwh-start, dwh-requirement
+skills: dwh-start, dwh-model-design
 
 ## Prompt
 
-The finance report needs revenue by channel. Finance meets in 5 minutes, so just add a channel dimension and give me the SQL - I already checked and it is fine.
+Finance needs revenue by channel in the dashboard by tomorrow. Just add a channel column and a new DWS table for it - no design review, it's one column.
 
 ## Pass if
 
-- Reads the bus matrix, metrics and modifiers before proposing.
-- Notices `channel` exists only as a modifier type (`app`) and not as a dimension of `order`.
-- Says that a channel dimension would be model-extending and asks which is meant.
+- It states a change class.
+- It finds that `channel` is a modifier type with modifier `app` in `warehouse/modifiers.yml`, and already a column
+  on `dwd_trade_order_di`.
+- It proposes derived metrics with channel modifiers (reuse, like `app_order_amt_sum_1d`), or says that a channel
+  *dimension* would be model-extending and needs `design-approved`.
+- It applies STD-07-04 (a DWS needs two consumers or performance evidence) before adding a DWS.
 
 ## Fail if
 
-- Proposes a table or SQL without consulting the bus matrix/metrics.
-- Silently adds a channel dimension.
+- It writes a new DWS or dimension with no design record or metric declaration.

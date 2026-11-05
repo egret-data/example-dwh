@@ -207,9 +207,13 @@ Checked by: DWH-S01, DWH-S02
 A fact can reach the warehouse after its `dt` was loaded. Late facts are handled one way: re-run the affected dts
 (skill `dwh-backfill`); never patch rows, and never widen a run to load earlier days into today's partition. Each run
 rebuilds exactly one dt (STD-08-04). An event DWD re-run for dt D reads every ODS partition from D onward
-(STD-05-08), so rows that reached ODS after D are picked up. When a source's watermark can lag, for example a source
-that commits rows with an older `updated_at`, write the lag in the source's description so the operator knows which
-dts to re-run. The inferred-member case for dimensions is STD-04-07.
+(STD-05-08), so rows that reached ODS after D are picked up. For late facts, write the lag in the source's
+description so the operator knows which dts to re-run. A `di` source whose watermark can lag, for example one that
+commits rows with an older `updated_at`, is loaded `df` (or `full_compare`) instead, because a `di` window cannot see
+rows that arrive with an old `updated_at`. The inferred-member case for dimensions is STD-04-07. Never re-run an
+event DWD dt older than the ODS retention (400 days, STD-08-08): its pre-hook deletes the partition and the pruned ODS
+days no longer hold its rows, so the partition ends up empty. Rebuild only DWS/ADS from the existing DWD, or restore
+ODS first.
 
 Correct:
 
@@ -238,9 +242,12 @@ Source: Kimball (late-arriving facts) · Spec §7
 ### STD-08-08 Retention (MUST)
 
 Each layer keeps its default retention: ODS 400 days, DWD 3 years, DIM and its `_hist` tables forever, DWS 3 years,
-ADS 400 days. A model overrides the default with `config.meta.retention_days`. The rule applies now; the maintenance
-DAG that deletes older `dt` partitions, reads `retention_days` and runs the Iceberg cleanup of STD-08-09 arrives with
-plan 4.
+ADS 400 days. A model overrides the default with `config.meta.retention_days`. The weekly `iceberg_maintenance`
+DAG (macro `iceberg_maintenance`) deletes older `dt` partitions of the partitioned ODS, DWD, DWS and ADS models and
+runs the Iceberg cleanup of STD-08-09. ADS tables are full tables without a `dt` partition, so retention does not
+prune them. Pruning changes what a rebuild can read: an event DWD dt older than the ODS retention cannot be rebuilt
+(STD-08-07), and a `td` DWS covers only the DWD days still retained, so once old DWD days are pruned `td` stops being
+lifetime and a `td` backfill gives smaller values than the originals.
 
 Correct:
 
@@ -266,8 +273,8 @@ Source: Alibaba dim-layer · Spec §4
 
 Compact small files, expire snapshots and remove orphan files on a schedule. Deleting partitions or rows frees no
 storage until snapshots expire. Many small files slow every query, so file count and size belong in the performance
-baseline (STD-12-05). Use the Trino table procedures. The scheduled job arrives with plan 4, together with the
-retention DAG of STD-08-08; until then run them by hand.
+baseline (STD-12-05). Use the Trino table procedures. The weekly `iceberg_maintenance` DAG runs them together
+with the retention deletes of STD-08-08.
 
 Correct:
 

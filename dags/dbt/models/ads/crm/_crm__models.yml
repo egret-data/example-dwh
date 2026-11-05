@@ -1,0 +1,37 @@
+version: 2
+models:
+- name: ads_crm_customer_value
+  description: Customer value (lifetime order amount, order count and average order amount) per customer per day, for the CRM customer-value export that ranks customers for account managers.
+  config:
+    tags:
+    - app:crm
+  columns:
+  - name: customer_key
+    description: Durable key of the customer (grain).
+    data_tests:
+    - not_null
+  - name: order_amt_sum_td
+    description: Sum of order amounts in VND for all orders placed up to dt.
+    config:
+      meta:
+        metric: order_amt_sum_td
+  - name: order_cnt_td
+    description: Number of orders placed up to dt.
+    config:
+      meta:
+        metric: order_cnt_td
+  - name: avg_order_amt_td
+    description: Average order amount in VND over all orders up to dt (order_amt_sum_td / order_cnt_td).
+    config:
+      meta:
+        metric: avg_order_amt_td
+  - name: dt
+    description: Statistical day (Asia/Ho_Chi_Minh) the metrics are computed for.
+    data_tests:
+    - not_null
+  data_tests:
+  - dbt_utils.unique_combination_of_columns:
+      arguments:
+        combination_of_columns:
+        - customer_key
+        - dt

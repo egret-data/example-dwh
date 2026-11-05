@@ -1,0 +1,62 @@
+version: 2
+models:
+- name: dim_pub_date
+  description: Calendar dimension, one row per day from 2020-01-01 to 2030-12-31, plus the Unknown and Not applicable members.
+  config:
+    contract:
+      enforced: true
+    tags:
+    - domain:pub
+  columns:
+  - name: date_key
+    description: Surrogate key of cal_date; '-1' is Unknown and '-2' is Not applicable.
+    data_type: varchar
+    data_tests:
+    - unique
+    - not_null
+  - name: cal_date
+    description: Calendar date; null for the special members.
+    data_type: date
+    data_tests:
+    - not_null:
+        config:
+          where: date_key not in ('-1', '-2')
+  - name: year
+    description: Calendar year of cal_date.
+    data_type: bigint
+  - name: month
+    description: Calendar month of cal_date, 1 to 12.
+    data_type: bigint
+  - name: weekday
+    description: ISO day of the week of cal_date, 1 is Monday and 7 is Sunday.
+    data_type: bigint
+- name: dim_pub_customer
+  description: Current customer, one row per customer_id, plus the Unknown and Not applicable members. History of city is in dim_pub_customer_hist (SCD4).
+  config:
+    contract:
+      enforced: true
+    tags:
+    - domain:pub
+  columns:
+  - name: customer_key
+    description: Durable surrogate key, a hash of customer_id; '-1' is Unknown and '-2' is Not applicable.
+    data_type: varchar
+    data_tests:
+    - unique
+    - not_null
+  - name: customer_id
+    description: Customer id from the shop source; null for the special members.
+    data_type: bigint
+    data_tests:
+    - not_null:
+        config:
+          where: customer_key not in ('-1', '-2')
+  - name: customer_name
+    description: Current customer name (not historised).
+    data_type: varchar
+  - name: city
+    description: Current city of the customer; earlier values are in dim_pub_customer_hist.
+    data_type: varchar
+  - name: updated_at
+    description: When the source row last changed; the change marker of the history snapshot.
+    data_type: timestamp(6) with time zone

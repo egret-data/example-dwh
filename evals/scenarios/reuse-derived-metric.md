@@ -1,6 +1,5 @@
 # Scenario: reuse-derived-metric
 
-fixture: trade
 skills: dwh-start, dwh-model-design
 
 ## Prompt

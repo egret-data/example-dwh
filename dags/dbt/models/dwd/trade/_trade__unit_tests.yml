@@ -1,0 +1,70 @@
+version: 2
+# The merge itself is covered by test_capabilities. The model never calls is_incremental(), so no override is needed.
+# These tests pin the SELECT: an order keeps its placed-day dt, so the merge on order_id updates the existing row
+# in its original partition. pay_date_key is md5 of the pay day ('2026-11-02'), the hash dbt_utils produces.
+unit_tests:
+  - name: lifecycle_payment_on_a_later_day_updates_the_existing_row
+    model: dwd_trade_order_lifecycle_di
+    overrides:
+      vars:
+        dt: '2026-11-02'
+    given:
+      - input: ref('dwd_trade_order_di')
+        rows:
+          - {order_id: 2, order_date_key: d1, customer_key: c1, shop_key: s1, order_amt: 80000, created_at: '2026-11-01 11:00:00 +07:00', dt: '2026-11-01'}
+      - input: ref('dwd_trade_payment_di')
+        rows:
+          - {payment_id: p4, order_id: 2, pay_amt: 80000, paid_at: '2026-11-02 08:00:00 +07:00', dt: '2026-11-02'}
+      - input: ref('dim_pub_customer')
+        rows: []
+      - input: ref('dim_pub_date')
+        rows: []
+      - input: ref('dim_trade_shop')
+        rows: []
+    expect:
+      rows:
+        - {order_id: 2, pay_date_key: 5eae58763dcbe2a0584afac0ef91415a, customer_key: c1, pay_amt: 80000, paid_at: '2026-11-02 08:00:00 +07:00', is_paid: true, dt: '2026-11-01'}
+
+  - name: lifecycle_two_payments_take_the_first_paid_at_and_the_summed_amount
+    model: dwd_trade_order_lifecycle_di
+    overrides:
+      vars:
+        dt: '2026-11-02'
+    given:
+      - input: ref('dwd_trade_order_di')
+        rows:
+          - {order_id: 7, order_date_key: d1, customer_key: c1, shop_key: s1, order_amt: 100000, created_at: '2026-11-01 11:00:00 +07:00', dt: '2026-11-01'}
+      - input: ref('dwd_trade_payment_di')
+        rows:
+          - {payment_id: p7a, order_id: 7, pay_amt: 60000, paid_at: '2026-11-02 08:00:00 +07:00', dt: '2026-11-02'}
+          - {payment_id: p7b, order_id: 7, pay_amt: 40000, paid_at: '2026-11-02 09:00:00 +07:00', dt: '2026-11-02'}
+      - input: ref('dim_pub_customer')
+        rows: []
+      - input: ref('dim_pub_date')
+        rows: []
+      - input: ref('dim_trade_shop')
+        rows: []
+    expect:
+      rows:
+        - {order_id: 7, pay_date_key: 5eae58763dcbe2a0584afac0ef91415a, pay_amt: 100000, paid_at: '2026-11-02 08:00:00 +07:00', is_paid: true, dt: '2026-11-01'}
+
+  - name: lifecycle_unpaid_order_has_the_not_applicable_pay_date
+    model: dwd_trade_order_lifecycle_di
+    overrides:
+      vars:
+        dt: '2026-11-02'
+    given:
+      - input: ref('dwd_trade_order_di')
+        rows:
+          - {order_id: 4, order_date_key: d2, customer_key: c1, shop_key: s2, order_amt: 40000, created_at: '2026-11-02 20:00:00 +07:00', dt: '2026-11-02'}
+      - input: ref('dwd_trade_payment_di')
+        rows: []
+      - input: ref('dim_pub_customer')
+        rows: []
+      - input: ref('dim_pub_date')
+        rows: []
+      - input: ref('dim_trade_shop')
+        rows: []
+    expect:
+      rows:
+        - {order_id: 4, pay_date_key: '-2', is_paid: false, dt: '2026-11-02'}

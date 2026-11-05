@@ -24,3 +24,17 @@ sources:
           meta:
             load: df
             delete_handling: none
+      - name: shops
+        description: One row per shop; updated in place.
+        config:
+          meta:
+            load: df
+            delete_handling: none
+      - name: payments
+        description: One row per payment; insert-only.
+        config:
+          meta:
+            load: di
+            watermark: updated_at
+            delete_handling: none
+            delete_handling_reason: Payments are insert-only; the shop app never deletes or changes them.

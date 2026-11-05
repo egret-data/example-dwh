@@ -1,6 +1,5 @@
 # Scenario: start-urgent-pressure
 
-fixture: trade
 skills: dwh-start
 
 ## Prompt

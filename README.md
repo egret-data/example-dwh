@@ -89,19 +89,18 @@ format and that every lint code it cites exists (DWH-R).
 
 `dwh scaffold` prints (or, with `--write`, creates) the files of a new model from the design in `warehouse/*.yml`,
 with empty descriptions so that `dwh lint` fails until you fill them. The design must declare the domain, process,
-dimensions and metrics first; the real `warehouse/` has none yet, so the examples below, one per layer, run against
-the eval fixture design (`--warehouse evals/fixtures/trade/warehouse`) and print the files without writing them:
+dimensions and metrics first. The examples below, one per layer, run against the `trade` design in `warehouse/` and
+print the files without writing them:
 
 ```bash
 dwh="uv run --project tools/dwh dwh"
-wh="--warehouse evals/fixtures/trade/warehouse"
-$dwh scaffold ods_shop_orders_di --grain order_id $wh
-$dwh scaffold dim_pub_customer --from ods_shop_customers_df $wh   # also writes dim_pub_customer_hist
-$dwh scaffold dwd_trade_order_di --from ods_shop_orders_di --grain order_id --event-at created_at $wh
+$dwh scaffold ods_shop_orders_di --grain order_id
+$dwh scaffold dim_pub_customer --from ods_shop_customers_df   # also writes dim_pub_customer_hist
+$dwh scaffold dwd_trade_order_di --from ods_shop_orders_di --grain order_id --event-at created_at
 $dwh scaffold dws_trade_customer_1d --from dwd_trade_order_di --grain customer_key \
-  --metric order_amt_sum_1d order_cnt_1d $wh
-$dwh scaffold ads_bi_customer_daily --from dws_trade_customer_1d --grain customer_key \
-  --metric order_amt_sum_1d avg_order_amt_1d $wh
+  --metric order_amt_sum_1d order_cnt_1d
+$dwh scaffold ads_crm_customer_value --from dws_trade_customer_td --grain customer_key \
+  --metric order_amt_sum_td avg_order_amt_td
 ```
 
 Style and hooks:
@@ -112,15 +111,52 @@ make pre-commit-install  # install the git hook
 make pre-commit          # run every hook on all files
 ```
 
-To test a change to a skill, run its scenario (`evals/scenarios/`) headless, first on the old commit (RED: the agent
-should fail) and then on the new one (GREEN: it should pass), and grade the answers by hand:
+To test a change to a skill, run its scenario (`evals/scenarios/`) headless with and without the skills, and let the
+LLM judge grade both answers (see `evals/README.md`):
 
 ```bash
-./evals/run.sh new-source-crm --ref <old-commit>   # RED
-./evals/run.sh new-source-crm                      # GREEN, at HEAD
+./evals/run.sh new-source-crm --without-skills   # baseline: no skills or agent instruction files
+./evals/run.sh new-source-crm                    # with skills, at HEAD
+make eval-all                                    # every scenario, both ways, graded and summarised
 ```
 
-Answers go to `evals/results/` (git-ignored). Plan 4 adds automated grading and a second tool.
+Answers, grades and summaries go to `evals/results/` (git-ignored).
+
+## The trade reference domain
+
+The `trade` domain (plus the `crm` application layer) is the worked example, built by following the skills.
+Design record: [docs/designs/2026-11-04-trade-reference-domain.md](docs/designs/2026-11-04-trade-reference-domain.md).
+Models per layer:
+
+| Layer | Models |
+|-------|--------|
+| ODS | `ods_shop_orders_di` and `ods_shop_payments_di` (incremental by `updated_at`), `ods_shop_customers_df` and `ods_shop_shops_df` (full daily snapshots) |
+| DIM | `dim_pub_date` (calendar), `dim_pub_customer` (current row per customer), `dim_pub_customer_hist` (SCD4 snapshot by source `updated_at`), `dim_trade_shop` |
+| DWD | `dwd_trade_order_di` (order event by day), `dwd_trade_payment_di` (payment event by pay day), `dwd_trade_order_lifecycle_di` (accumulating snapshot: placed, paid) |
+| DWS | `dws_trade_customer_1d`, `dws_trade_customer_nd` (30 days) and `dws_trade_customer_td` (to date) |
+| ADS | `ads_crm_customer_value` (average order amount per customer) |
+
+How it was built: the design went into `warehouse/*.yml` first, then each model started from `dwh scaffold --write`
+(the commands are in the section above, one per layer, in layer order: ODS, then DIM and DWD, then DWS, then ADS),
+and the descriptions, tests and SQL were filled in until `dwh lint` and `dbt test` were clean.
+
+Run it locally:
+
+```bash
+make dev-up            # the source fixture is loaded into Postgres
+make test-integration  # builds the domain day by day and asserts the expected values
+make e2e               # runs the three DAGs below in the image
+make eval-all          # runs every skill scenario with and without skills, graded by an LLM judge (costs money)
+```
+
+`make e2e` runs these three commands in the Airflow image (`dbt_pub` and `dbt_trade` are asset-scheduled, so
+`airflow dags test` gets the day from `--conf`):
+
+```bash
+airflow dags test dbt_ods_shop 2026-11-03
+airflow dags test dbt_pub 2026-11-03 --conf '{"dt": "2026-11-02"}'
+airflow dags test dbt_trade 2026-11-03 --conf '{"dt": "2026-11-02"}'
+```
 
 ## How it runs in production
 

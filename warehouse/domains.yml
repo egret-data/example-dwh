@@ -1,3 +1,9 @@
 # Data domains (spec §5). Each name is one token: it fills one segment of table names.
 # Adding a domain is model-extending: it needs a docs/designs/ record and the design-approved label.
-domains: []
+domains:
+  - name: trade
+    description: Orders and payments of the online shops (the reference domain).
+    owner: data-eng
+  - name: crm
+    description: Customer relationship management applications that consume the warehouse.
+    owner: data-eng
