@@ -122,6 +122,42 @@ make eval-all                                    # every scenario, both ways, gr
 
 Answers, grades and summaries go to `evals/results/` (git-ignored).
 
+## The trade reference domain
+
+The `trade` domain (plus the `crm` application layer) is the worked example, built by following the skills.
+Design record: [docs/designs/2026-11-04-trade-reference-domain.md](docs/designs/2026-11-04-trade-reference-domain.md).
+Models per layer:
+
+| Layer | Models |
+|-------|--------|
+| ODS | `ods_shop_orders_di` and `ods_shop_payments_di` (incremental by `updated_at`), `ods_shop_customers_df` and `ods_shop_shops_df` (full daily snapshots) |
+| DIM | `dim_pub_date` (calendar), `dim_pub_customer` (current row per customer), `dim_pub_customer_hist` (SCD4 snapshot by source `updated_at`), `dim_trade_shop` |
+| DWD | `dwd_trade_order_di` (order event by day), `dwd_trade_payment_di` (payment event by pay day), `dwd_trade_order_lifecycle_di` (accumulating snapshot: placed, paid) |
+| DWS | `dws_trade_customer_1d`, `dws_trade_customer_nd` (30 days) and `dws_trade_customer_td` (to date) |
+| ADS | `ads_crm_customer_value` (average order amount per customer) |
+
+How it was built: the design went into `warehouse/*.yml` first, then each model started from `dwh scaffold --write`
+(the commands are in the section above, one per layer, in layer order: ODS, then DIM and DWD, then DWS, then ADS),
+and the descriptions, tests and SQL were filled in until `dwh lint` and `dbt test` were clean.
+
+Run it locally:
+
+```bash
+make dev-up            # the source fixture is loaded into Postgres
+make test-integration  # builds the domain day by day and asserts the expected values
+make e2e               # runs the three DAGs below in the image
+make eval-all          # runs every skill scenario with and without skills, graded by an LLM judge (costs money)
+```
+
+`make e2e` runs these three commands in the Airflow image (`dbt_pub` and `dbt_trade` are asset-scheduled, so
+`airflow dags test` gets the day from `--conf`):
+
+```bash
+airflow dags test dbt_ods_shop 2026-11-03
+airflow dags test dbt_pub 2026-11-03 --conf '{"dt": "2026-11-02"}'
+airflow dags test dbt_trade 2026-11-03 --conf '{"dt": "2026-11-02"}'
+```
+
 ## How it runs in production
 
 - git-sync clones this repo to `/opt/airflow/dags/repo`; Airflow parses only `dags/`.

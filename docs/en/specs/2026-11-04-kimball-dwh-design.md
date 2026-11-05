@@ -26,7 +26,8 @@ Success criteria:
   on the first PR for a "reuse" change.
 - No metric is defined in two places; every DWD maps to a bus-matrix cell; every DWS metric column
   traces to a declared derived metric.
-- Evaluation scenarios (§8.2) pass on Claude Code and at least one other tool.
+- Evaluation scenarios (§8.2) pass on Claude Code. (User decision, plan 4: Claude Code only; the runner keeps a
+  `--tool` seam for other tools. Not met at plan 4: see the plan 4 verification record.)
 
 Out of scope: BI/semantic-layer serving (BI tools read the warehouse, D13, but are not configured here),
 data catalog products, infrastructure provisioning of Trino / Iceberg catalog / Airflow cluster (assumed
@@ -281,10 +282,20 @@ Skills are written test-first (superpowers:writing-skills): scenarios exist befo
   - "add CRM source" → stops for design approval;
   - "report needs revenue by channel" → consults the bus matrix before proposing;
   - pressure scenario ("urgent, just write the SQL") → still classifies the change first.
-- Each scenario runs headless on Claude Code (`claude -p`) and one other tool (Codex or Cursor CLI);
-  graded by `dwh lint` plus a checklist. Re-run on every skill change.
+- Each scenario runs headless on Claude Code (`claude -p`) only (user decision, plan 4); `evals/run.sh --tool`
+  is the seam for other tools, and only `claude` is implemented. Re-run on every skill change.
 
-`evals/run.sh` (plan 3) runs one scenario headless with `claude -p` on any commit; plan 4 adds automated grading and a second tool.
+`evals/run.sh` runs one scenario headless with `claude -p` on any commit. Plan 4 adds:
+
+- a **no-skills baseline** on the same commit: `--without-skills` removes `skills/`, `.claude/`, `.cursor/` and the
+  generated agent files in a throwaway worktree, so only the rulebook and design records remain;
+- an **LLM judge** (`evals/grade.py`) that grades each answer against the scenario's Pass if / Fail if criteria,
+  by majority of 3 judge calls, and writes `<answer>.grade.json`;
+- a **summary** (`evals/summary.py`) with one row per scenario and model: with skills, without skills, and whether
+  the scenario discriminates (passes with skills, fails without);
+- `make eval-all`, which runs every scenario both ways at HEAD, grades them and writes the summary.
+
+There are 10 scenarios. Results are in the plan 4 verification record.
 
 ## 9. Delivery plan
 
@@ -293,16 +304,28 @@ Each step gets its own implementation plan (writing-plans), executed in order:
 1. **Repo skeleton** — Airflow project, Dockerfile, dbt-trino + Cosmos wiring, `.airflowignore`, basic CI, DAG integrity tests. *Done 2026-11-04 (PR #1); capabilities recorded in `docs/en/verification/2026-11-04-plan1-capabilities.md`.*
 2. **`warehouse/` + `dwh lint`** — JSON Schemas, YAML loaders, rule families N/L/M/B/T/D/S with fixtures, catalogue generation. Also carries the plan 1 follow-ups: timezone-aware `dt` (D12) with the boundary test, source `meta` for the existing ODS models, locked transitive image dependencies (constraints file), CI actions pinned to commit SHAs.
 3. **Rulebook + skills** — `docs/standards/`, `skills/`, `AGENTS.md`, `dwh sync-agents`, `dwh scaffold`, pre-commit.
-4. **Reference domain** — one end-to-end domain (ODS → DIM/DWD → DWS → ADS) built by following the skills; doubles as the fixture for `evals/scenarios/`.
+4. **Reference domain** — one end-to-end domain (ODS → DIM/DWD → DWS → ADS) built by following the skills; the scenarios in `evals/scenarios/` run against it. *Done 2026-11-05 (plan 4).*
 
 ## 10. Assumptions and open items
 
 - Trino, an Iceberg catalog (REST/HMS/Nessie) and an Airflow cluster on the official Helm chart exist;
   this repo does not provision them.
 - Verified in plan 1 against the pinned versions: dbt-trino `merge` and `snapshot` on Iceberg, partition
-  replacement, Cosmos Asset events for each model run. Not yet measured: whether an event on an asset
-  with no consumer DAG yet later triggers a newly added consumer (plan 4). The local stack uses an
+  replacement, Cosmos Asset events for each model run. The local stack uses an
   Iceberg JDBC catalog on Postgres; production may use REST/HMS/Nessie.
+- Measured in plan 4 (Airflow 3.3.2):
+  - **Asset-triggered runs and `dt`.** A run of a DAG scheduled on Assets has no cron data interval; its interval is
+    the moment it was created. `dt` therefore comes from the triggering events (`_common.dates.ASSET_DT_TEMPLATE`).
+    It is the earliest day over the `dbt_ods_*` events, in this order: the run's own `conf.dt`; otherwise the earliest
+    `conf.dt` of a `dbt_ods_*` producer run; otherwise the earliest business day of a `dbt_ods_*` producer run's data
+    interval. Events of other producers (`dbt_pub`) are ignored, `conf.dt` included. With none of the three, `dt`
+    renders empty and dbt rejects it at once. A live scheduler run confirmed it: a scheduled `dbt_ods_shop` run
+    triggered `dbt_pub`, then `dbt_trade`, once each, both with the producer's business day.
+  - **Snapshots emit Assets.** Cosmos emits one for a snapshot (`dim_pub_customer_hist`), so `dbt_trade` waits on it
+    and no extra marker Asset is needed.
+  - **Manual runs and backfills.** `dag_run.conf.dt` overrides the day (`DT_TEMPLATE`) for manual runs and backfills.
+  - **Per-task dbt artifacts.** Concurrent Cosmos tasks must write `run_results.json` to their own
+    `DBT_TARGET_PATH`, or Asset events are attributed to the wrong model.
 - Catalogue: GitHub Pages (plan 2).
 - The reference domain (plan 4) is chosen by the team; until then examples in the rulebook use a
   generic `trade` domain (order, payment).
@@ -337,3 +360,5 @@ Each step gets its own implementation plan (writing-plans), executed in order:
 - **Plan 3 review:** row `04`: a DIM is a table with one current row per key, its history in `_hist`, replacing the
   daily full-snapshot partition; row `08`: late facts are handled only by re-running the affected `dt`s, without a
   lookback window.
+- **Plan 4:** trade reference domain; special-member labels; SCD4 snapshots by source `updated_at`;
+  event-date roles; Claude-only evals with an LLM judge
