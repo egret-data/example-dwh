@@ -321,8 +321,8 @@ Each step gets its own implementation plan (writing-plans), executed in order:
     producer runs of different days collapsed into one run; one run builds exactly one `dt`, so the template renders
     `MULTIPLE:<day>,<day>` (oldest first), `get_dt` fails the run, and the operator reruns each listed day with
     `conf.dt`, oldest first. Events of other producers (`dbt_pub`) are ignored, `conf.dt` included. With no
-    candidate, `dt` renders empty and dbt rejects it at once. A live scheduler run confirmed it: a scheduled `dbt_ods_shop` run
-    triggered `dbt_pub`, then `dbt_trade`, once each, both with the producer's business day.
+    candidate, `dt` renders empty and dbt rejects it at once. A live scheduler run confirmed it: a scheduled
+    `dbt_ods_shop` run triggered `dbt_pub`, then `dbt_trade`, once each, both with the producer's business day.
   - **Snapshots emit Assets.** Cosmos emits one for a snapshot (`dim_pub_customer_hist`), so `dbt_trade` waits on it
     and no extra marker Asset is needed.
   - **Manual runs and backfills.** `dag_run.conf.dt` overrides the day (`DT_TEMPLATE`) for manual runs and backfills.
