@@ -103,6 +103,10 @@ def test_shop_dimension():
         "WHERE shop_id IS NOT NULL ORDER BY 1"
     )
     assert rows == [(1, "An Shop", "Hanoi"), (2, "Binh Shop", "Ho Chi Minh")]
+    assert query(
+        f"SELECT shop_key, shop_name, city FROM {table('dim', 'dim_trade_shop')} "
+        "WHERE shop_id IS NULL ORDER BY 1"
+    ) == [("-1", "Unknown", "Unknown"), ("-2", "Not applicable", "Not applicable")]
 
 
 def order_ids_by_dt() -> dict:
@@ -208,6 +212,15 @@ def test_dws_nd_and_td_on_the_last_day():
         (101, 160000, 2),
         (102, 179000, 2),
         (103, 265000, 2),
+    ]
+
+
+def test_dws_nd_on_an_old_day_ends_on_that_day():
+    # 2026-11-01 was rebuilt by the backfill after 11-02 and 11-03 existed: its 30-day window must stop at
+    # 11-01 (STD-08-04), not run on into the later partitions (that would give the 11-03 values above).
+    assert ints(dws("dws_trade_customer_nd", "order_amt_sum_30d", "2026-11-01")) == [
+        (101, 120000),
+        (102, 80000),
     ]
 
 
