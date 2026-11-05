@@ -18,10 +18,19 @@ description: Use when past dt partitions must be rebuilt - after a logic fix, la
      tables that read no `dt`, so a past day changes nothing there, and `dbt_trade` ignores `dbt_pub`'s `conf.dt`.
    - **A manual `dbt_pub` run (a DIM logic fix) leaves its DIM events queued for `dbt_trade`** (measured). It does
      not start `dbt_trade` on its own, and the next night `dbt_trade` still gets the night's day. But that night
-     `dbt_trade` starts as soon as the ODS events land, alongside `dbt_pub`, so its DWD joins a `_hist` snapshot
-     that has not run yet; this repeats every night. After the manual `dbt_pub` run succeeds, clear the queue:
-     `curl -X DELETE <airflow>/api/v2/dags/dbt_trade/assets/queuedEvents` (with an API token), then trigger
-     `dbt_trade` with `conf.dt` as above.
+     `dbt_trade` starts as soon as the ODS events land, alongside `dbt_pub`'s snapshot, so its DWD can read
+     `dim_pub_customer_hist` before the night's changes land (the overlap is measured; a stale read is not). This
+     repeats every night. After the manual `dbt_pub` run succeeds, remove only the DIM events from `dbt_trade`'s
+     queue, never the whole queue: queued ODS events belong to a night whose `dbt_trade` has not run yet, and
+     deleting them means that night never runs and nothing fails. With an Airflow API token (a JWT, header
+     `Authorization: Bearer <token>`):
+     1. `GET <airflow>/api/v2/dags/dbt_trade/assets/queuedEvents` lists the queued `asset_id`s;
+     2. `GET <airflow>/api/v2/assets?uri_pattern=dim_pub_` gives the ids of the DIM Assets;
+     3. for each queued id that is a DIM Asset:
+        `DELETE <airflow>/api/v2/dags/dbt_trade/assets/<asset_id>/queuedEvents`.
+
+     Then trigger `dbt_trade` with `conf.dt` as above. A redesign is planned: `dbt_trade` will be scheduled on
+     `dbt_pub`'s DIM Assets, with `dt` carried in the Asset event, which removes this step.
    - **A run failed with `dt MULTIPLE:<day>,<day>`.** Producer runs of different days collapsed into one
      asset-triggered run, which builds only one dt, so it refused. Trigger that DAG by hand once per listed day
      with `conf.dt`, oldest first, waiting for each run; then the windowed DWS of step 4.
@@ -45,7 +54,8 @@ description: Use when past dt partitions must be rebuilt - after a logic fix, la
 | "Rebuild that old event DWD dt from ODS" | Never re-run an event DWD dt older than the ODS retention (400 days, STD-08-08). The pre-hook deletes the partition and the pruned ODS days no longer hold its rows, so the partition ends up empty. Rebuild only DWS/ADS from the existing DWD, or restore ODS first. |
 | "A td backfill reproduces the old values" | `td` sums the DWD days still retained (3 years); once older DWD days are pruned, `td` stops being lifetime and a rebuilt `td` is smaller than the original. |
 | "Pick one day for the collapsed run and move on" | The other listed days stay unbuilt and nothing fails. Rerun every listed day with `conf.dt`, oldest first. |
-| "Trigger `dbt_pub` for that day first, to be safe" | It rebuilds current-state DIMs only and queues DIM events, so every later night's `dbt_trade` runs beside `dbt_pub` until you clear the queue. |
+| "Trigger `dbt_pub` for that day first, to be safe" | It rebuilds current-state DIMs only and queues DIM events, so every later night's `dbt_trade` runs beside `dbt_pub` until you remove them. |
+| "Clear the whole `dbt_trade` queue, it is quicker" | Queued ODS events of a night not yet built are lost with it: that night's `dbt_trade` never runs and nothing fails. Remove only the DIM events. |
 
 ## Rules
 

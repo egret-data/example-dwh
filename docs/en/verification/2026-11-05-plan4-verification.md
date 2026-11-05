@@ -140,7 +140,8 @@ snapshot, 55 data tests and 5 unit tests, so lint covers every layer.
 
 The first three limits below were measured on a live scheduler afterwards: see `2026-11-05-plan4-followups.md`
 (the `MULTIPLE` path works, a manual `dbt_pub` run leaves events queued with a nightly ordering consequence, and the
-namespace race happens and the default retries absorb it).
+namespace race happens and the default retries absorb it). The open follow-ups at the end of this list (M-2,
+M-3, M-5, multi-run evaluation) are closed by branch `fix/plan4-followups`.
 
 - **Collapsed business days fail loudly and are rerun by hand.** When producer runs of different days collapse into
   one asset-triggered run, the template renders `MULTIPLE:<day>,<day>`, `get_dt` raises, and the operator reruns each

@@ -2,7 +2,9 @@
 
 Measured on 2026-11-05 on branch `fix/plan4-followups`. It closes three "Known limits" of
 `2026-11-05-plan4-verification.md`: the `MULTIPLE` path, the manual `dbt_pub` run under `dbt_trade`'s AND schedule,
-and the first-run namespace race. The full chain run of this branch is recorded in its PR.
+and the first-run namespace race. The full chain on a fresh stack at `1ff9782` ended `EXIT=0` (lint, sql-lint,
+test-repo 30, dwh-test 234, validate/dwh-lint/check-standards 0 findings, pre-commit, test-dags 27,
+test-integration 33, e2e OK).
 
 ## Set-up
 
@@ -37,7 +39,8 @@ day 2026-11-04).
   `dt: '2026-11-04'`, and so did `dbt_trade`.
 - **Result: the race happens (in ODS and again in DWS), and the default retries absorb it.** The first retry
   succeeds, at a cost of the 5-minute retry delay.
-- `DWH_TASK_RETRIES=0` (the e2e setting) would fail such a first run.
+- Whether `DWH_TASK_RETRIES=0` (the e2e setting) fails such a first run was not measured. `make e2e` runs the DAGs
+  with `airflow dags test` and did not hit the race in this branch's chain.
 
 ## A - collapsed business days (`MULTIPLE`)
 
@@ -101,13 +104,26 @@ has not taken that night's changes yet, until the queue is cleared.
 The manual rebuild order for one past day, written into `dwh-backfill` and STD-11-03:
 1. From DWD upward, trigger only `dbt_trade` with `conf.dt` (oldest first, wait for each run). Do not trigger
    `dbt_pub`: its DIMs are current-state tables that read no `dt`.
-2. If `dbt_pub` must run by hand (a DIM logic fix), clear `dbt_trade`'s queued events after it succeeds.
+2. If `dbt_pub` must run by hand (a DIM logic fix), remove only its DIM events from `dbt_trade`'s queue after it
+   succeeds, with `DELETE /api/v2/dags/dbt_trade/assets/<asset_id>/queuedEvents` per DIM Asset (ids from
+   `GET /api/v2/dags/dbt_trade/assets/queuedEvents` and `GET /api/v2/assets?uri_pattern=dim_pub_`). Never delete
+   the whole queue: it can hold the ODS events of a night whose `dbt_trade` has not run, and that night would then
+   never run.
+
+What was verified for step 2:
+- Measured live: the whole-queue DELETE on a queue that held only DIM events (204, queue empty, normal order the next
+  night).
+- Read, not exercised: the per-asset endpoint `DELETE /api/v2/dags/{dag_id}/assets/{asset_id}/queuedEvents` and the
+  `uri_pattern` filter of `GET /api/v2/assets`. Both are in the Airflow 3.3.2 API source in the image
+  (`airflow/api_fastapi/core_api/routes/public/assets.py`). `GET .../queuedEvents` returns `asset_id` but no URI,
+  hence the second GET.
+- Not measured: a DWD actually reading a stale `_hist` row. Only the overlap in time is measured.
 
 ## Known limits after this record
 
 - **Not fixed: the overlap after a manual `dbt_pub` run.** It is avoided by procedure (skill, STD-11-03,
-  STD-11-08). A structural fix would change `dbt_trade`'s schedule, for example by also requiring a marker emitted at
-  the end of `dbt_pub` that only the night's run emits. That needs a design decision.
+  STD-11-08). A redesign is planned in a separate change: `dbt_trade` will be scheduled on `dbt_pub`'s DIM Assets,
+  with `dt` carried in the Asset event extra.
 - **The night is a backfill run, not a cron tick.** Its data interval and Asset events are the same, but no scheduled
   midnight run was observed beyond the first one (C).
 - The live run used `DWH_TASK_RETRIES=0` for A and B. Retries would only delay the `MULTIPLE` failure: it is a

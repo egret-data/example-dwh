@@ -67,9 +67,12 @@ listed day with `conf.dt`, oldest first (skill `dwh-backfill`). Both are measure
 (`docs/en/verification/2026-11-05-plan4-followups.md`): a two-day `dbt_ods_shop` backfill made one `dbt_trade` run
 fail with `MULTIPLE:2026-11-01,2026-11-02`, and the two reruns with `conf.dt` succeeded. A manual `dbt_pub` run
 leaves its DIM Asset events queued for `dbt_trade`. The next night `dbt_trade` gets the night's day, but it starts as
-soon as the ODS events land, alongside that night's `dbt_pub`, and this repeats every night until the queue is
-cleared (`DELETE /api/v2/dags/dbt_trade/assets/queuedEvents`). So do not run `dbt_pub` by hand for a backfill from
-DWD upward (its DIMs are current-state tables and read no `dt`); when it must run, clear the queue afterwards.
+soon as the ODS events land, alongside that night's `dbt_pub` snapshot, and this repeats every night until those
+events are removed. So do not run `dbt_pub` by hand for a backfill from DWD upward (its DIMs are current-state
+tables and read no `dt`). When it must run, remove only its DIM events from `dbt_trade`'s queue afterwards
+(`DELETE /api/v2/dags/dbt_trade/assets/<asset_id>/queuedEvents` per DIM Asset), never the whole queue, which can
+hold the ODS events of a night not yet built (skill `dwh-backfill`). A redesign is planned: `dbt_trade` will be
+scheduled on `dbt_pub`'s DIM Assets, with `dt` carried in the Asset event.
 
 Correct:
 
@@ -226,7 +229,7 @@ Assets it reads. Domain models run in `dbt_<domain>`, which selects `tag:domain:
 Assets it reads (STD-11-04). Snapshots run every day, before the DWD that joins them; inside one DAG, dbt's `ref()`
 order does this, and across DAGs `dbt_trade` also waits on the Asset Cosmos emits for the snapshot. That wait is
 void while `dbt_trade` holds queued DIM events from an earlier `dbt_pub` run (a manual one): then the DWD runs
-alongside the snapshot (measured; STD-11-03 says how to clear the queue). A missed
+alongside the snapshot (measured; STD-11-03 says which queued events to remove). A missed
 snapshot day loses those versions for good, because a backfill cannot recreate history: monitor that each
 snapshot ran.
 

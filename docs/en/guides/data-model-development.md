@@ -498,7 +498,8 @@ flowchart TD
 
 What this means in practice:
 
-- A manual run of `dbt_pub` or `dbt_trade` must pass `conf.dt`; it wins outright.
+- A manual run of `dbt_trade` must pass `conf.dt`; it wins outright. `dbt_pub` builds current-state DIMs that read
+  no `dt`, so its `conf.dt` changes nothing and `dbt_trade` ignores it.
 - A manual `dbt_ods_shop` run for a past day (with `conf.dt`) hands that day to its consumers.
 - Events from `dbt_pub` never set `dbt_trade`'s day, even with a `conf.dt`. Only `dbt_ods_*` runs do. A manual
   `dbt_pub` run therefore does not set `dbt_trade`'s day: trigger `dbt_trade` yourself.
@@ -544,7 +545,8 @@ flowchart TD
     F -->|"No"| H["Oldest dt first, one dt at a time"]
     G --> H
     H --> I{"How is the DAG scheduled?"}
-    I -->|"Asset: dbt_pub, dbt_trade"| J["airflow dags trigger DAG --conf dt,<br/>wait for success"]
+    I -->|"Asset: dbt_trade"| J["airflow dags trigger dbt_trade --conf dt,<br/>wait for success"]
+    I -->|"Asset: dbt_pub"| P["Do not trigger:<br/>its DIMs read no dt"]
     I -->|"Cron: dbt_ods_*"| K["airflow backfill create<br/>--max-active-runs 1"]
     I -->|"No Airflow"| L["dbt build --select model+ --vars dt"]
     J --> M{"More dts?"}
@@ -575,6 +577,16 @@ airflow dags trigger dbt_trade --conf '{"dt": "2026-11-02"}'   # wait for succes
 airflow backfill create --dag-id dbt_ods_shop --from-date 2026-11-02 --to-date 2026-11-02 --max-active-runs 1
 ```
 
+- **Do not trigger `dbt_pub` for a rebuild from DWD upward.** Its DIMs are current-state tables that read no `dt`.
+  A manual `dbt_pub` run also leaves its DIM events queued for `dbt_trade`, so every later night `dbt_trade` starts
+  alongside that night's `dbt_pub` snapshot instead of after it, and its DWD can read `dim_pub_customer_hist` before
+  the night's changes land (the overlap is measured, a stale read is not;
+  `docs/en/verification/2026-11-05-plan4-followups.md`). When `dbt_pub` must run by hand, remove only its DIM events
+  from `dbt_trade`'s queue afterwards, never the whole queue: queued ODS events of a night not yet built would be
+  lost and that night would never run. The steps (an API token, then `GET .../queuedEvents`, `GET
+  /api/v2/assets?uri_pattern=dim_pub_`, and `DELETE /api/v2/dags/dbt_trade/assets/<asset_id>/queuedEvents` per DIM
+  Asset) are in the `dwh-backfill` skill. A redesign is planned: `dbt_trade` will be scheduled on `dbt_pub`'s DIM
+  Assets, with `dt` carried in the Asset event.
 - **`dt MULTIPLE:<day>,<day>`.** Trigger that DAG by hand once per listed day with `conf.dt`, oldest first, waiting
   for each run; then rebuild the windowed DWS. Picking one day leaves the others unbuilt, and nothing fails.
 - **Retention red flags.**
@@ -586,12 +598,6 @@ airflow backfill create --dag-id dbt_ods_shop --from-date 2026-11-02 --to-date 2
   versions for good (STD-11-08). Rebuild history only with an approved, written plan.
 - **Verify each dt** with `dwh-verify` steps 3–4 (numbers and idempotency), and record the range and the evidence
   in the PR.
-
-- **Do not trigger `dbt_pub` for a rebuild from DWD upward.** Its DIMs are current-state tables that read no `dt`.
-  A manual `dbt_pub` run also leaves its DIM events queued for `dbt_trade`, so every later night `dbt_trade` starts
-  beside `dbt_pub` instead of after it (measured; `docs/en/verification/2026-11-05-plan4-followups.md`). When
-  `dbt_pub` must run by hand, clear the queue afterwards:
-  `curl -X DELETE <airflow>/api/v2/dags/dbt_trade/assets/queuedEvents`.
 
 ## 7. Walkthrough: how the trade domain was built
 
