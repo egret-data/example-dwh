@@ -196,6 +196,22 @@ def test_scaffolded_dws_passes_every_lint_family(wh, lint):
     assert lint(builder) == []
 
 
+def test_dws_metric_types_follow_the_measure_scale(wh):
+    files = scaffold(
+        "dws_trade_customer_1d",
+        wh,
+        project_dir="",
+        grain=["customer_key"],
+        metrics=["order_amt_sum_1d", "order_cnt_1d"],
+        upstream=["dwd_trade_order_di"],
+    )
+
+    cols = columns(model_of(files["models/dws/trade/dws_trade_customer_1d.yml"]))
+    # Trino: sum(decimal(18, 2)) is decimal(38, 2); a scale-4 contract fails on first build.
+    assert cols["order_amt_sum_1d"]["data_type"] == "decimal(38, 2)"
+    assert cols["order_cnt_1d"]["data_type"] == "bigint"
+
+
 def test_nd_metric_filters_by_modifier_and_the_window_goes_in_where(wh):
     files = scaffold(
         "dws_trade_customer_nd",
@@ -210,14 +226,19 @@ def test_nd_metric_filters_by_modifier_and_the_window_goes_in_where(wh):
     assert re.search(
         r"sum\(order_amt\) filter \(\s*where channel = 'app'\s*\)\s+as app_order_amt_sum_30d", sql
     )
-    assert f"where dt > {TODAY} - interval '30' day\n" in sql
+    # Bounded on both sides: a backfill of an old dt must not read later partitions (STD-08-04).
+    assert f"where\n    dt > {TODAY} - interval '30' day\n    and dt <= {TODAY}\ngroup by" in sql
 
 
 @pytest.mark.parametrize(
     ("name", "metrics", "where"),
     [
-        ("dws_trade_customer_1w", ["order_amt_sum_1w"], f"dt > {TODAY} - interval '7' day"),
-        ("dws_trade_customer_td", ["order_amt_sum_td"], f"dt <= {TODAY}"),
+        (
+            "dws_trade_customer_1w",
+            ["order_amt_sum_1w"],
+            f"\n    dt > {TODAY} - interval '7' day\n    and dt <= {TODAY}",
+        ),
+        ("dws_trade_customer_td", ["order_amt_sum_td"], f" dt <= {TODAY}"),
     ],
 )
 def test_other_periods_put_their_window_in_where(make_warehouse, name, metrics, where):
@@ -235,7 +256,7 @@ def test_other_periods_put_their_window_in_where(make_warehouse, name, metrics, 
     warehouse = load_warehouse(make_warehouse(mutate=add_metric))
     files = scaffold(name, warehouse, project_dir="", grain=["customer_key"], metrics=metrics, upstream=["x"])
     sql = files[f"models/dws/trade/{name}.sql"]
-    assert f"where {where}\n" in sql
+    assert f"where{where}\ngroup by" in sql
     assert "filter" not in sql
 
 

@@ -1,5 +1,6 @@
 """`dwh scaffold`: a model's .sql and .yml (and the SCD4 snapshot) from the warehouse design (spec §6.2)."""
 
+import re
 from pathlib import Path, PurePosixPath
 from string import Template
 
@@ -127,7 +128,7 @@ DWS_SQL = Template(
 select
 $columns
 from {{ ref('$upstream') }}
-where $window
+where$window
 group by $group_by
 """
 )
@@ -165,8 +166,17 @@ def data_type(column: str) -> str:
 def metric_type(wh: Warehouse, metric: str) -> str:
     if metric in wh.calculated:
         return "double"
-    aggregation = wh.atomic[wh.derived[metric]["atomic"]]["aggregation"]
-    return "bigint" if aggregation in ("count", "count_distinct") else "decimal(38, 4)"
+    atomic = wh.atomic[wh.derived[metric]["atomic"]]
+    if atomic["aggregation"] in ("count", "count_distinct"):
+        return "bigint"
+    measure = data_type(atomic["name"])
+    if atomic["aggregation"] in ("min", "max") and measure != "varchar":
+        return measure
+    # Trino widens sum(decimal(p, s)) to decimal(38, s) and keeps sum(bigint) as bigint.
+    scale = re.fullmatch(r"decimal\(\d+, (\d+)\)", measure)
+    if scale:
+        return f"decimal(38, {scale.group(1)})"
+    return measure if measure == "bigint" else "decimal(38, 4)"
 
 
 def column(name: str, *, contract: bool, tests=(), meta=None, dtype: str | None = None) -> dict:
@@ -493,12 +503,17 @@ def _dwd(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
 
 
 def table_window(period: str, days: int) -> str:
-    """The `where` clause that bounds the rows a DWS table reads: the widest window of its metrics."""
+    """What follows `where` in a DWS table: the widest window of its metrics, ending on dt.
+
+    The nd/1w window has an upper bound too, so a backfill of an old dt never reads later partitions
+    (STD-08-04: one run = one dt).
+    """
     if period == "1d":
-        return f"dt = {TODAY}"
+        return f" dt = {TODAY}"
     if period == "td":
-        return f"dt <= {TODAY}"
-    return f"dt > {TODAY} - interval '{7 if period == '1w' else days}' day"
+        return f" dt <= {TODAY}"
+    length = 7 if period == "1w" else days
+    return f"\n    dt > {TODAY} - interval '{length}' day\n    and dt <= {TODAY}"
 
 
 def _dws(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict[str, str]:
