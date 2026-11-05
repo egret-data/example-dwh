@@ -503,7 +503,8 @@ flowchart TD
 
 Ý nghĩa thực tế:
 
-- Chạy tay `dbt_pub` hoặc `dbt_trade` phải truyền `conf.dt`; nó luôn thắng.
+- Chạy tay `dbt_trade` phải truyền `conf.dt`; nó luôn thắng. `dbt_pub` dựng các DIM trạng thái hiện tại, không đọc
+  `dt`, nên `conf.dt` của nó không thay đổi gì và `dbt_trade` bỏ qua nó.
 - Chạy tay `dbt_ods_shop` cho một ngày cũ (có `conf.dt`) sẽ chuyển ngày đó cho các DAG dùng nó.
 - Sự kiện từ `dbt_pub` không bao giờ quyết định ngày của `dbt_trade`, kể cả khi có `conf.dt`. Chỉ các lần chạy
   `dbt_ods_*` mới quyết định. Vì vậy chạy tay `dbt_pub` không đặt ngày cho `dbt_trade`: hãy tự kích hoạt
@@ -550,7 +551,8 @@ flowchart TD
     F -->|"Không"| H["dt cũ nhất trước, từng dt một"]
     G --> H
     H --> I{"DAG được lập lịch thế nào?"}
-    I -->|"Asset: dbt_pub, dbt_trade"| J["airflow dags trigger DAG --conf dt,<br/>chờ thành công"]
+    I -->|"Asset: dbt_trade"| J["airflow dags trigger dbt_trade --conf dt,<br/>chờ thành công"]
+    I -->|"Asset: dbt_pub"| P["Không kích hoạt:<br/>DIM của nó không đọc dt"]
     I -->|"Cron: dbt_ods_*"| K["airflow backfill create<br/>--max-active-runs 1"]
     I -->|"Không có Airflow"| L["dbt build --select model+ --vars dt"]
     J --> M{"Còn dt nào nữa?"}
@@ -581,6 +583,16 @@ airflow dags trigger dbt_trade --conf '{"dt": "2026-11-02"}'   # chờ thành c�
 airflow backfill create --dag-id dbt_ods_shop --from-date 2026-11-02 --to-date 2026-11-02 --max-active-runs 1
 ```
 
+- **Không kích hoạt `dbt_pub` khi dựng lại từ DWD trở lên.** Các DIM của nó là bảng trạng thái hiện tại, không đọc
+  `dt`. Một lần chạy tay `dbt_pub` còn để lại các sự kiện DIM trong hàng đợi của `dbt_trade`, nên mọi đêm sau đó
+  `dbt_trade` chạy song song với snapshot của `dbt_pub` đêm đó thay vì chạy sau nó, và DWD của nó có thể đọc
+  `dim_pub_customer_hist` trước khi thay đổi của đêm đó vào (đã đo sự chồng lấn, chưa đo việc đọc dữ liệu cũ;
+  `docs/en/verification/2026-11-05-plan4-followups.md`). Khi buộc phải chạy tay `dbt_pub`, sau đó chỉ xoá các sự
+  kiện DIM của nó khỏi hàng đợi của `dbt_trade`, không bao giờ xoá cả hàng đợi: các sự kiện ODS đang chờ của một
+  đêm chưa dựng sẽ mất và đêm đó không bao giờ chạy. Các bước (một API token, rồi `GET .../queuedEvents`, `GET
+  /api/v2/assets?uri_pattern=dim_pub_`, và `DELETE /api/v2/dags/dbt_trade/assets/<asset_id>/queuedEvents` cho mỗi
+  Asset DIM) nằm trong skill `dwh-backfill`. Đã lên kế hoạch thiết kế lại: `dbt_trade` sẽ được lập lịch theo các
+  Asset DIM của `dbt_pub`, với `dt` mang trong sự kiện Asset.
 - **`dt MULTIPLE:<ngày>,<ngày>`.** Kích hoạt tay DAG đó một lần cho mỗi ngày được liệt kê với `conf.dt`, cũ nhất
   trước, chờ từng lần chạy; rồi dựng lại các DWS theo cửa sổ. Chọn một ngày sẽ bỏ các ngày khác không được dựng, và
   không có gì báo lỗi.
@@ -593,9 +605,6 @@ airflow backfill create --dag-id dbt_ods_shop --from-date 2026-11-02 --to-date 2
   vĩnh viễn (STD-11-08). Chỉ dựng lại lịch sử khi có kế hoạch viết ra và được duyệt.
 - **Kiểm chứng từng dt** bằng bước 3–4 của `dwh-verify` (số liệu và idempotency), và ghi khoảng ngày cùng bằng chứng
   vào PR.
-
-Điểm còn hở đã biết: skill còn bảo kích hoạt `dbt_pub` với `conf.dt` trước `dbt_trade`. Bản ghi kiểm chứng plan 4
-(follow-up M-5) ghi rằng việc này vô tác dụng với backfill từ DWD trở lên, vì các DIM là bảng trạng thái hiện tại.
 
 ## 7. Ví dụ thực tế: domain trade được xây thế nào
 
