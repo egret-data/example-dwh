@@ -210,7 +210,10 @@ rebuilds exactly one dt (STD-08-04). An event DWD re-run for dt D reads every OD
 (STD-05-08), so rows that reached ODS after D are picked up. For late facts, write the lag in the source's
 description so the operator knows which dts to re-run. A `di` source whose watermark can lag, for example one that
 commits rows with an older `updated_at`, is loaded `df` (or `full_compare`) instead, because a `di` window cannot see
-rows that arrive with an old `updated_at`. The inferred-member case for dimensions is STD-04-07.
+rows that arrive with an old `updated_at`. The inferred-member case for dimensions is STD-04-07. Never re-run an
+event DWD dt older than the ODS retention (400 days, STD-08-08): its pre-hook deletes the partition and the pruned ODS
+days no longer hold its rows, so the partition ends up empty. Rebuild only DWS/ADS from the existing DWD, or restore
+ODS first.
 
 Correct:
 
@@ -242,7 +245,9 @@ Each layer keeps its default retention: ODS 400 days, DWD 3 years, DIM and its `
 ADS 400 days. A model overrides the default with `config.meta.retention_days`. The weekly `iceberg_maintenance`
 DAG (macro `iceberg_maintenance`) deletes older `dt` partitions of the partitioned ODS, DWD, DWS and ADS models and
 runs the Iceberg cleanup of STD-08-09. ADS tables are full tables without a `dt` partition, so retention does not
-prune them.
+prune them. Pruning changes what a rebuild can read: an event DWD dt older than the ODS retention cannot be rebuilt
+(STD-08-07), and a `td` DWS covers only the DWD days still retained, so once old DWD days are pruned `td` stops being
+lifetime and a `td` backfill gives smaller values than the originals.
 
 Correct:
 
