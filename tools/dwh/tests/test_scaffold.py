@@ -534,6 +534,14 @@ def test_cli_scaffold_prints_writes_and_rejects(make_warehouse, capsys, tmp_path
     dwd = ["scaffold", "dwd_trade_order_di", "--grain", "order_id", "--from", "ods_shop_orders_di"]
     assert main([*dwd, "--warehouse", warehouse]) == 2
     assert "--event-at is required" in capsys.readouterr().err
+    # The scaffolded ODS does not type order_id yet, so the DWD refuses rather than guess (M-2).
+    assert main([*dwd, "--event-at", "created_at", "--warehouse", warehouse]) == 2
+    assert "neither declares its data_type" in capsys.readouterr().err
+    ods_sql = tmp_path / "dags/dbt/models/ods/shop/ods_shop_orders_di.sql"
+    typed = (
+        "    cast(order_id as bigint) as order_id,\n    {{ source_ts('created_at', tz) }} as created_at,\n"
+    )
+    ods_sql.write_text(ods_sql.read_text().replace("    order_id,\n", typed))
     assert main([*dwd, "--event-at", "created_at", "--warehouse", warehouse]) == 0
     assert "in_business_day_tz('created_at')" in capsys.readouterr().out
 

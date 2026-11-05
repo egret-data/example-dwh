@@ -167,38 +167,80 @@ def data_type(column: str) -> str:
 class PassThroughTypes:
     """Types of the columns a model passes through from its upstream models (M-2).
 
-    The type an upstream model (or an ODS model's source) declares wins; otherwise the name-based guess of
-    `data_type`, and the column is listed in a comment of the generated .yml.
+    The type an upstream model declares in its .yml, or an ODS model casts to in its .sql, wins. When the
+    primary upstream is an ODS model of the project and gives no type, scaffold refuses: a guess repeats M-2.
+    Otherwise the name-based guess of `data_type` is used and the column is listed in a comment of the .yml.
+    Measures whose type is guessed are listed too, since a stored metric's type follows its measure.
     """
 
     def __init__(self, types: ColumnTypes | None, upstream: list[str]):
-        self.types, self.upstream, self.guessed = types, upstream, []
+        self.types, self.upstream = types, upstream
+        self.guessed: list[str] = []
+        self.guessed_measures: list[str] = []
+
+    def resolve(self, name: str) -> str | None:
+        found = self.types.upstream_type(self.upstream, name) if self.types else None
+        if found:
+            return found
+        ods = self.types.untypable_ods(self.upstream) if self.types else None
+        if ods:
+            raise ScaffoldError(
+                f"{name}: {ods} neither declares its data_type in its .yml nor casts it in its .sql "
+                f"(`cast({name} as <type>) as {name}`); declare `data_type` for {name} in {ods}'s .yml"
+            )
+        return None
 
     def __call__(self, name: str) -> str:
-        declared = self.types.upstream_type(self.upstream, name) if self.types else None
-        if declared:
-            return declared
+        found = self.resolve(name)
+        if found:
+            return found
         if name not in self.guessed:
             self.guessed.append(name)
         return data_type(name)
 
+    def measure(self, name: str) -> tuple[str, bool]:
+        """The measure's type and whether it was declared (False: guessed and listed in the note)."""
+        found = self.resolve(name)
+        if found:
+            return found, True
+        if name not in self.guessed_measures:
+            self.guessed_measures.append(name)
+        return data_type(name), False
+
     def note(self) -> str:
-        if not self.guessed:
-            return ""
-        return (
-            "# data_type guessed from the column name, as no upstream model or source declares it: "
-            f"{', '.join(self.guessed)}\n"
-        )
+        lines = ""
+        if self.guessed:
+            lines += (
+                "# data_type guessed from the column name, as no upstream model declares or casts it: "
+                f"{', '.join(self.guessed)}\n"
+            )
+        if self.guessed_measures:
+            lines += (
+                "# metric data_type derived from a measure type guessed from its name (declare it upstream): "
+                f"{', '.join(self.guessed_measures)}\n"
+            )
+        return lines
 
 
 INTEGER_TYPES = ("tinyint", "smallint", "integer", "int", "bigint")
+FLOAT_TYPES = ("double", "real")
 
 
-def metric_type(wh: Warehouse, metric: str, measure: str | None = None) -> str:
-    """The Trino result type of a stored metric; `measure` is the measure's declared type, if known.
+def normal_type(kind: str) -> str:
+    """Lower case, single spaces, `decimal(p, s)` spelt with one space after the comma."""
+    kind = " ".join(kind.strip().lower().split())
+    decimal = re.fullmatch(r"decimal\(\s*(\d+)\s*(?:,\s*(\d+)\s*)?\)", kind)
+    if decimal:
+        return f"decimal({decimal.group(1)}, {decimal.group(2) or 0})"
+    return kind
 
-    count -> bigint; min/max keep the measure type; sum of an integer type -> bigint and sum of
-    decimal(p, s) -> decimal(38, s) (Trino widens the precision, keeps the scale). Anything else is refused.
+
+def metric_type(wh: Warehouse, metric: str, measure: str | None = None, *, declared: bool = True) -> str:
+    """The Trino result type of a stored metric; `measure` is the measure's type (guessed when not given).
+
+    count -> bigint; min/max keep the measure type; sum of an integer type -> bigint; sum of decimal(p, s)
+    (or decimal(p)) -> decimal(38, s), as Trino widens the precision and keeps the scale; sum of double or
+    real keeps it. Any other sum is refused.
     """
     if metric in wh.calculated:
         return "double"
@@ -206,19 +248,28 @@ def metric_type(wh: Warehouse, metric: str, measure: str | None = None) -> str:
     aggregation, name = atomic["aggregation"], atomic["name"]
     if aggregation in ("count", "count_distinct"):
         return "bigint"
-    measure = measure or data_type(name)
+    if measure is None:
+        measure, declared = data_type(name), False
+    measure = normal_type(measure)
     if aggregation in ("min", "max"):
         return measure
     if aggregation != "sum":
         raise ScaffoldError(f"{metric}: cannot type a {aggregation} metric")
     if measure in INTEGER_TYPES:
         return "bigint"
-    scale = re.fullmatch(r"decimal\(\s*\d+\s*,\s*(\d+)\s*\)", measure)
+    if measure in FLOAT_TYPES:
+        return measure
+    scale = re.fullmatch(r"decimal\(\d+, (\d+)\)", measure)
     if scale:
         return f"decimal(38, {scale.group(1)})"
+    if declared:
+        raise ScaffoldError(
+            f"{metric}: cannot sum {name}: its declared type {measure} is not numeric "
+            "(sum takes an integer, decimal, double or real measure)"
+        )
     raise ScaffoldError(
-        f"{metric}: cannot type sum({name}) of a {measure} measure; sum needs an integer or decimal measure. "
-        f"If {name} is numeric, declare its data_type in the upstream model's .yml"
+        f"{metric}: cannot type sum({name}): no upstream model declares {name}, and its name suggests "
+        f"{measure}. If {name} is numeric, declare its data_type in the upstream model's .yml"
     )
 
 
@@ -580,6 +631,7 @@ def _dws(name, parts, wh, grain, metrics, upstream, watermark, event_at, types=N
     if not metrics:
         raise ScaffoldError(f"{name}: --metric is required for a DWS table")
     dims = key_dimensions(wh)
+    passed = PassThroughTypes(types, upstream)
     select = [(g, None) for g in grain]
     metric_columns = []
     widest = max((wh.derived[m].get("days", 0) for m in metrics if m in wh.derived), default=0)
@@ -601,14 +653,14 @@ def _dws(name, parts, wh, grain, metrics, upstream, watermark, event_at, types=N
         if conditions:
             expression += f" filter (where {' and '.join(conditions)})"
         select.append((expression, metric))
+        measured = atomic["aggregation"] in ("sum", "min", "max")
+        measure_type, declared = passed.measure(atomic["name"]) if measured else (None, True)
         metric_columns.append(
             column(
                 metric,
                 contract=True,
                 meta={"metric": metric},
-                dtype=metric_type(
-                    wh, metric, types.upstream_type(upstream, atomic["name"]) if types else None
-                ),
+                dtype=metric_type(wh, metric, measure_type, declared=declared),
             )
         )
     sql = DWS_SQL.substitute(
@@ -622,7 +674,6 @@ def _dws(name, parts, wh, grain, metrics, upstream, watermark, event_at, types=N
         upstream=upstream[0],
         group_by=", ".join(grain),
     )
-    passed = PassThroughTypes(types, upstream)
     columns = []
     for g in grain:
         tests: list = ["not_null"]
