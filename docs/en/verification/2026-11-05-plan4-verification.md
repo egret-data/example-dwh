@@ -138,6 +138,10 @@ snapshot, 55 data tests and 5 unit tests, so lint covers every layer.
 
 ## Known limits
 
+The first three limits below were measured on a live scheduler afterwards: see `2026-11-05-plan4-followups.md`
+(the `MULTIPLE` path works, a manual `dbt_pub` run leaves events queued with a nightly ordering consequence, and the
+namespace race happens and the default retries absorb it).
+
 - **Collapsed business days fail loudly and are rerun by hand.** When producer runs of different days collapse into
   one asset-triggered run, the template renders `MULTIPLE:<day>,<day>`, `get_dt` raises, and the operator reruns each
   listed day with `conf.dt`, oldest first (STD-11-03, `dwh-backfill`). This is unit-tested (Jinja templates) and

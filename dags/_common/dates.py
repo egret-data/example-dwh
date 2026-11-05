@@ -27,9 +27,9 @@ DT_TEMPLATE = (
 # rejects: the run fails and the operator reruns each listed day with conf.dt, oldest first (STD-11-03).
 # The SDK's source_dag_run carries plain datetimes, hence astimezone rather than pendulum's in_timezone.
 # Events of other producers (dbt_pub) are ignored, conf.dt included: their own interval is not a business
-# day. dbt_trade's AND schedule is expected (not measured live) to keep a manual dbt_pub run's events
-# queued until the next night's ODS events, so honouring that run's conf.dt would rebuild the old day, not
-# the new one.
+# day. Measured live (docs/en/verification/2026-11-05-plan4-followups.md): dbt_trade's AND schedule keeps a
+# manual dbt_pub run's events queued until the next night's ODS events, so honouring that run's conf.dt would
+# rebuild the old day, not the new one; the ranged ODS backfill renders MULTIPLE and fails as intended.
 # A run with no candidate renders an empty dt, which dbt rejects at once (get_dt validates it).
 ASSET_DT_TEMPLATE = (
     "{% set found = namespace(days=[]) %}"
