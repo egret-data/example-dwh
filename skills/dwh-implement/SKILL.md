@@ -13,7 +13,9 @@ description: Use when a design is approved or a reuse change is agreed, and dbt 
    written by hand. Scaffold writes the `.sql` and the `.yml` with contract, grain and relationships tests and the
    selection tag. For an SCD4 dimension it also writes the `_hist` snapshot.
 2. **Complete the YAML.** Fill every description, check each `data_type`, and list every column the SQL selects
-   (DWH-D02 cannot see unlisted columns).
+   (DWH-D02 cannot see unlisted columns). Scaffold copies a passed-through column's type from the upstream model's
+   `.yml` (or an ODS model's source column `meta.data_type`); the columns it had to guess from the name are listed
+   in a comment at the top of the `.yml`.
 3. **Unit tests for logic.** Add dbt unit tests for non-trivial logic in `_<folder>__unit_tests.yml`: day windows,
    SCD point-in-time joins, metric filters. Incremental models need `overrides.macros.is_incremental`. Run them and
    watch them fail.

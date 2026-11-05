@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from pathlib import Path, PurePosixPath
 
 from dwh.catalog import write_catalog
+from dwh.column_types import load_column_types
 from dwh.design_gate import added_concepts, check_gate, load_warehouse_at
 from dwh.findings import Finding
 from dwh.lint import Context, run_lint
@@ -133,6 +134,7 @@ def cmd_scaffold(args: argparse.Namespace) -> int:
             upstream=args.upstream,
             watermark=args.watermark,
             event_at=args.event_at,
+            column_types=load_column_types(Path(args.project_dir)),
         )
         if args.write:
             for path in write_files(files, Path(".")):

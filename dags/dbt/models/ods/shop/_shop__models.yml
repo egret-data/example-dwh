@@ -6,11 +6,14 @@ models:
     columns:
       - name: order_id
         description: Order id from the source.
+        data_type: bigint
         data_tests: [not_null]
       - name: shop_id
         description: Shop that took the order, from the source.
+        data_type: bigint
       - name: channel
         description: Sales channel of the order (app or web), from the source.
+        data_type: varchar
       - name: dt
         description: Partition date (the day the row changed).
         data_tests: [not_null]
@@ -24,6 +27,7 @@ models:
     columns:
       - name: customer_id
         description: Customer id from the source.
+        data_type: bigint
         data_tests: [not_null]
       - name: dt
         description: Partition date (snapshot day).
@@ -38,6 +42,7 @@ models:
     columns:
       - name: shop_id
         description: Shop id from the source.
+        data_type: bigint
         data_tests: [not_null]
       - name: dt
         description: Partition date (snapshot day).
@@ -51,8 +56,12 @@ models:
     description: "Daily increment of shop.payments: rows whose updated_at falls on dt. Grain: one row per payment per dt."
     columns:
       - name: payment_id
-        description: Payment id from the source.
+        description: Payment id from the source (a varchar, unlike the other ids).
+        data_type: varchar
         data_tests: [not_null]
+      - name: order_id
+        description: Order the payment is for, from the source.
+        data_type: bigint
       - name: dt
         description: Partition date (the day the payment was recorded).
         data_tests: [not_null]

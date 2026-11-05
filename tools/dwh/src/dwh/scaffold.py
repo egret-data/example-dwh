@@ -6,6 +6,7 @@ from string import Template
 
 import yaml
 
+from dwh.column_types import ColumnTypes
 from dwh.rules.naming import PATTERNS
 from dwh.warehouse import Warehouse
 
@@ -163,6 +164,33 @@ def data_type(column: str) -> str:
     return "varchar"
 
 
+class PassThroughTypes:
+    """Types of the columns a model passes through from its upstream models (M-2).
+
+    The type an upstream model (or an ODS model's source) declares wins; otherwise the name-based guess of
+    `data_type`, and the column is listed in a comment of the generated .yml.
+    """
+
+    def __init__(self, types: ColumnTypes | None, upstream: list[str]):
+        self.types, self.upstream, self.guessed = types, upstream, []
+
+    def __call__(self, name: str) -> str:
+        declared = self.types.upstream_type(self.upstream, name) if self.types else None
+        if declared:
+            return declared
+        if name not in self.guessed:
+            self.guessed.append(name)
+        return data_type(name)
+
+    def note(self) -> str:
+        if not self.guessed:
+            return ""
+        return (
+            "# data_type guessed from the column name, as no upstream model or source declares it: "
+            f"{', '.join(self.guessed)}\n"
+        )
+
+
 def metric_type(wh: Warehouse, metric: str) -> str:
     if metric in wh.calculated:
         return "double"
@@ -195,7 +223,14 @@ def relationships(model: str, field: str) -> dict:
 
 
 def models_yml(
-    name: str, columns: list[dict], *, grain: list[str] | None, contract=False, meta=None, tag=None
+    name: str,
+    columns: list[dict],
+    *,
+    grain: list[str] | None,
+    contract=False,
+    meta=None,
+    tag=None,
+    note: str = "",
 ) -> str:
     model: dict = {"name": name, "description": ""}
     config: dict = {}
@@ -212,7 +247,7 @@ def models_yml(
         model["data_tests"] = [
             {"dbt_utils.unique_combination_of_columns": {"arguments": {"combination_of_columns": grain}}}
         ]
-    return HEADER + yaml.safe_dump({"version": 2, "models": [model]}, sort_keys=False, width=110)
+    return HEADER + note + yaml.safe_dump({"version": 2, "models": [model]}, sort_keys=False, width=110)
 
 
 def select_list(items: list[tuple[str, str | None]], *, align: bool = True, indent: str = "    ") -> str:
@@ -285,7 +320,7 @@ def domain_tags(tag: str) -> dict:
     return {"tags": [tag]}
 
 
-def _ods(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict[str, str]:
+def _ods(name, parts, wh, grain, metrics, upstream, watermark, event_at, types=None) -> dict[str, str]:
     source, table, load = parts["source"], parts["table"], parts["load"]
     comment = (
         f"Daily increment of {source}.{table} for the business day dt (spec D12)."
@@ -323,20 +358,20 @@ def dim_current(upstream: str, key: str, natural: list[str], attributes: list[st
     return DIM_CURRENT_DI.substitute(versions=versions, members=members, upstream=upstream)
 
 
-def special_member(value: str, key: str, natural: list[str], attributes: list[str]) -> str:
+def special_member(value: str, key: str, natural: list[str], attributes: list[str], types=data_type) -> str:
     """A special-member row: text attributes carry the label, updated_at the epoch, everything else null."""
 
     def cell(name: str) -> str:
         if name == "updated_at":
             return EPOCH
-        if name in attributes and data_type(name) == "varchar":
+        if name in attributes and types(name) == "varchar":
             return LABELS[value]
-        return f"cast(null as {data_type(name)})"
+        return f"cast(null as {types(name)})"
 
     return select_list([(value, key), *[(cell(c), c) for c in [*natural, *attributes]]], indent="        ")
 
 
-def _dim(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict[str, str]:
+def _dim(name, parts, wh, grain, metrics, upstream, watermark, event_at, types=None) -> dict[str, str]:
     scope, dim_name = parts["scope"], parts["dimension"]
     if parts["hist"]:
         raise ScaffoldError(f"{name}: _hist tables are snapshots; scaffold dim_{scope}_{dim_name} to get one")
@@ -365,6 +400,7 @@ def _dim(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
         # The source's change time drives the snapshot's valid_from (STD-04-03).
         attributes.append("updated_at")
     tag = f"domain:{scope}"
+    passed = PassThroughTypes(types, upstream)
     sql = DIM_SQL.substitute(
         current_comment=(
             "A di upstream holds the rows changed on each dt: keep the latest version per natural key."
@@ -372,19 +408,21 @@ def _dim(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
             else "A df upstream: its latest partition is the current state."
         ),
         current_ctes=dim_current(upstream[0], key, natural, attributes),
-        unknown=special_member("'-1'", key, natural, attributes),
-        not_applicable=special_member("'-2'", key, natural, attributes),
+        unknown=special_member("'-1'", key, natural, attributes, passed),
+        not_applicable=special_member("'-2'", key, natural, attributes, passed),
         final=select_list([(c, None) for c in [key, *natural, *attributes]]),
     )
     # The special members have a null natural key, so not_null skips them.
     real_rows = {"not_null": {"config": {"where": f"{key} not in ('-1', '-2')"}}}
     columns = [column(key, contract=True, tests=["unique", "not_null"])]
-    columns += [column(k, contract=True, tests=[real_rows]) for k in natural]
-    columns += [column(a, contract=True) for a in attributes]
+    columns += [column(k, contract=True, tests=[real_rows], dtype=passed(k)) for k in natural]
+    columns += [column(a, contract=True, dtype=passed(a)) for a in attributes]
     folder = f"models/dim/{scope}"
     files = {
         f"{folder}/{name}.sql": sql,
-        f"{folder}/{name}.yml": models_yml(name, columns, grain=None, contract=True, tag=tag),
+        f"{folder}/{name}.yml": models_yml(
+            name, columns, grain=None, contract=True, tag=tag, note=passed.note()
+        ),
     }
     if dimension["history"] == "scd4":
         snapshot = {
@@ -410,7 +448,7 @@ def _dim(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
     return files
 
 
-def _dwd(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict[str, str]:
+def _dwd(name, parts, wh, grain, metrics, upstream, watermark, event_at, types=None) -> dict[str, str]:
     domain, process_name = parts["domain"], parts["process"]
     process = wh.processes.get(process_name)
     if process is None:
@@ -470,12 +508,13 @@ def _dwd(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
         event_at=event_at,
         upstream=upstream[0],
     )
+    passed = PassThroughTypes(types, upstream)
     columns = []
     for g in grain:
         tests = ["not_null"]
         if g in keys:
             tests.append(relationships(dim_model(keys[g]), f"{keys[g]['name']}_key"))
-        columns.append(column(g, contract=True, tests=tests))
+        columns.append(column(g, contract=True, tests=tests, dtype=None if g in keys else passed(g)))
     for key, dimension in keys.items():
         if key not in grain:
             columns.append(
@@ -486,7 +525,7 @@ def _dwd(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
                 )
             )
     if transaction:
-        columns.append(column(event_at, contract=True))
+        columns.append(column(event_at, contract=True, dtype=passed(event_at)))
     columns.append(column("dt", contract=True, tests=["not_null"]))
     folder = f"models/dwd/{domain}"
     return {
@@ -498,6 +537,7 @@ def _dwd(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
             contract=True,
             meta={"process": process_name},
             tag=f"domain:{domain}",
+            note=passed.note(),
         ),
     }
 
@@ -516,7 +556,7 @@ def table_window(period: str, days: int) -> str:
     return f"\n    dt > {TODAY} - interval '{length}' day\n    and dt <= {TODAY}"
 
 
-def _dws(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict[str, str]:
+def _dws(name, parts, wh, grain, metrics, upstream, watermark, event_at, types=None) -> dict[str, str]:
     domain, period = parts["domain"], parts["period"]
     if domain not in wh.domains:
         raise ScaffoldError(f"{name}: {domain!r} is not a domain in warehouse/domains.yml")
@@ -560,6 +600,7 @@ def _dws(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
         upstream=upstream[0],
         group_by=", ".join(grain),
     )
+    passed = PassThroughTypes(types, upstream)
     columns = []
     for g in grain:
         tests: list = ["not_null"]
@@ -568,19 +609,25 @@ def _dws(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict
             if stem not in dims:
                 raise ScaffoldError(f"{name}: grain key {g} does not name a dimension or bus-matrix role")
             tests.append(relationships(dim_model(dims[stem]), f"{dims[stem]['name']}_key"))
-        columns.append(column(g, contract=True, tests=tests))
+        columns.append(column(g, contract=True, tests=tests, dtype=passed(g)))
     columns += metric_columns
     columns.append(column("dt", contract=True, tests=["not_null"]))
     folder = f"models/dws/{domain}"
     return {
         f"{folder}/{name}.sql": sql,
         f"{folder}/{name}.yml": models_yml(
-            name, columns, grain=[*grain, "dt"], contract=True, meta={"grain": grain}, tag=f"domain:{domain}"
+            name,
+            columns,
+            grain=[*grain, "dt"],
+            contract=True,
+            meta={"grain": grain},
+            tag=f"domain:{domain}",
+            note=passed.note(),
         ),
     }
 
 
-def _ads(name, parts, wh, grain, metrics, upstream, watermark, event_at) -> dict[str, str]:
+def _ads(name, parts, wh, grain, metrics, upstream, watermark, event_at, types=None) -> dict[str, str]:
     if not metrics:
         raise ScaffoldError(f"{name}: --metric is required for an ADS table")
     select = [(g, None) for g in grain]
@@ -615,7 +662,9 @@ def scaffold(
     upstream=(),
     watermark: str = "updated_at",
     event_at: str | None = None,
+    column_types: ColumnTypes | None = None,
 ) -> dict[str, str]:
+    """`column_types` gives passed-through columns their upstream type; without it they are guessed."""
     layer = name.split("_", 1)[0]
     pattern = PATTERNS.get(layer)
     if pattern is None:
@@ -629,9 +678,8 @@ def scaffold(
         raise ScaffoldError(f"{name}: --grain is required (the columns that, with dt, identify one row)")
     if layer != "ods" and not upstream:
         raise ScaffoldError(f"{name}: --from is required (the upstream model or models)")
-    files = BUILDERS[layer](
-        name, match.groupdict(), wh, list(grain), list(metrics), list(upstream), watermark, event_at
-    )
+    args = (list(grain), list(metrics), list(upstream), watermark, event_at, column_types)
+    files = BUILDERS[layer](name, match.groupdict(), wh, *args)
     return {
         (str(PurePosixPath(project_dir, path)) if project_dir else path): text for path, text in files.items()
     }
