@@ -2,6 +2,8 @@
 
 Kimball/OneData data warehouse on Airflow + dbt-trino + Iceberg.
 Design: [docs/en/specs/2026-11-04-kimball-dwh-design.md](docs/en/specs/2026-11-04-kimball-dwh-design.md).
+Process guide (terms, flow diagrams, the daily run, backfill): [English](docs/en/guides/data-model-development.md) ·
+[Tiếng Việt](docs/vi/guides/data-model-development.md).
 
 ## Layout
 

@@ -49,6 +49,7 @@ Before any data change, open `skills/dwh-start/SKILL.md` and follow it. Then fol
 | Doing | Read |
 |-------|------|
 | anything | `docs/standards/00-principles.md` |
+| learning the whole process, its terms and diagrams | `docs/en/guides/data-model-development.md` (Vietnamese: `docs/vi/guides/`) |
 | choosing where a model goes or what it may read | `docs/standards/01-layers.md` |
 | naming a table, column or metric | `docs/standards/02-naming.md` |
 | adding a domain, process or bus-matrix row | `docs/standards/03-domains-bus-matrix.md` |
