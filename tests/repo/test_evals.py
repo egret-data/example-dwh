@@ -243,3 +243,158 @@ def test_run_sh_accepts_only_the_claude_tool():
 
     assert result.returncode == 2
     assert "claude" in result.stderr
+
+
+# --- several agent runs per side (`--runs N`, `-r<k>` files, majority per side) ---
+
+
+def test_summary_decides_each_side_by_majority_of_runs(tmp_path):
+    for k, passed in enumerate([True, False, True], 1):
+        write_grade(tmp_path / f"demo-abc1234-sonnet-r{k}.grade.json", [passed], [False])
+    for k, passed in enumerate([False, False, True], 1):
+        write_grade(tmp_path / f"demo-abc1234-sonnet-noskills-r{k}.grade.json", [passed], [False])
+
+    rows = summary.rows(tmp_path, "abc1234")
+
+    row = rows[("demo", "sonnet")]
+    assert row["with"]["passed"] is True
+    assert row["without"]["passed"] is False
+    assert row["discriminates"] is True
+    assert "| demo | sonnet | 2/3 runs pass: PASS | 1/3 runs pass: FAIL | yes |" in summary.build_table(rows)
+
+
+def test_a_tie_between_runs_is_not_a_majority(tmp_path):
+    write_grade(tmp_path / "demo-abc1234-sonnet-r1.grade.json", [True], [False])
+    write_grade(tmp_path / "demo-abc1234-sonnet-r2.grade.json", [False], [False])
+
+    rows = summary.rows(tmp_path, "abc1234")
+
+    assert rows[("demo", "sonnet")]["with"]["passed"] is False
+    assert len(rows[("demo", "sonnet")]["with"]["runs"]) == 2
+
+
+def test_failures_count_the_runs_that_missed_each_criterion(tmp_path):
+    write_grade(tmp_path / "demo-abc1234-sonnet-r1.grade.json", [False, True], [False])
+    write_grade(tmp_path / "demo-abc1234-sonnet-r2.grade.json", [False, True], [True])
+    write_grade(tmp_path / "demo-abc1234-sonnet-r3.grade.json", [True, True], [False])
+
+    text = summary.failures(summary.rows(tmp_path, "abc1234"))
+
+    assert "**demo** (sonnet, with skills)" in text
+    assert "not met in 2/3 runs: p0" in text
+    assert "hit in 1/3 runs: f0" in text
+    assert "p1" not in text
+
+
+def fake_claude(tmp_path: Path) -> Path:
+    """A `claude` on PATH that answers 'GOOD' on odd calls and 'BAD' on even calls (counted per side)."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    script = bin_dir / "claude"
+    script.write_text(
+        "#!/usr/bin/env bash\n"
+        "cat >/dev/null\n"
+        "side=skills; [ -e AGENTS.md ] || side=noskills\n"
+        'state="$FAKE_STATE/$side"\n'
+        'n=$(( $(cat "$state" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$state"\n'
+        'if [ "$side" = skills ] && [ "$n" != 2 ]; then word=GOOD; else word=BAD; fi\n'
+        'echo "$word answer $n"\n'
+    )
+    script.chmod(0o755)
+    return bin_dir
+
+
+def keyword_judge(tmp_path: Path) -> str:
+    """A fake judge: every Pass criterion met when the answer says GOOD, none when it says BAD."""
+    script = tmp_path / "keyword_judge.py"
+    script.write_text(
+        "import json, re, sys\n"
+        "prompt = sys.stdin.read()\n"
+        "answer = prompt.split('<answer>', 1)[1]\n"
+        "met = 'GOOD' in answer\n"
+        "rubric = prompt.split('Pass criteria:', 1)[1].split('<answer>', 1)[0]\n"
+        "pass_text, fail_text = rubric.split('Fail criteria:', 1)\n"
+        "passes = re.findall(r'^\\d+\\. ', pass_text, re.M)\n"
+        "fails = re.findall(r'^\\d+\\. ', fail_text, re.M)\n"
+        "print(json.dumps({'pass': [{'criterion': 'c', 'met': met, 'evidence': 'e'} for _ in passes],\n"
+        "                  'fail': [{'criterion': 'c', 'hit': False, 'evidence': 'e'} for _ in fails]}))\n"
+    )
+    return f"{sys.executable} {script}"
+
+
+def eval_env(tmp_path: Path) -> dict:
+    import os
+
+    state = tmp_path / "state"
+    state.mkdir()
+    results = tmp_path / "results"
+    return {
+        **os.environ,
+        "PATH": f"{fake_claude(tmp_path)}:{os.environ['PATH']}",
+        "FAKE_STATE": str(state),
+        "DWH_EVAL_RESULTS": str(results),
+        "DWH_EVAL_JUDGE": keyword_judge(tmp_path),
+        "DWH_EVAL_SAMPLES": "1",
+    }
+
+
+def head_sha() -> str:
+    return subprocess.run(
+        ["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+
+def test_run_sh_writes_one_numbered_answer_per_run(tmp_path):
+    env = eval_env(tmp_path)
+
+    result = subprocess.run(
+        ["bash", str(REPO / "evals" / "run.sh"), "revenue-by-channel", "--runs", "3"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    base = Path(env["DWH_EVAL_RESULTS"]) / f"revenue-by-channel-{head_sha()}-sonnet"
+    assert [Path(f"{base}-r{k}.md").read_text().strip() for k in (1, 2, 3)] == [
+        "GOOD answer 1",
+        "BAD answer 2",
+        "GOOD answer 3",
+    ]
+    assert not Path(f"{base}.md").exists()
+
+
+@pytest.mark.parametrize("runs", ["0", "x", "-1"])
+def test_run_sh_rejects_a_bad_run_count(tmp_path, runs):
+    result = subprocess.run(
+        ["bash", str(REPO / "evals" / "run.sh"), "revenue-by-channel", "--runs", runs],
+        capture_output=True,
+        text=True,
+        env=eval_env(tmp_path),
+    )
+
+    assert result.returncode == 2
+    assert "--runs" in result.stderr
+
+
+def test_run_all_grades_every_run_and_summarises_by_majority(tmp_path):
+    env = eval_env(tmp_path)
+
+    result = subprocess.run(
+        ["bash", str(REPO / "evals" / "run-all.sh"), "--runs", "3", "--scenario", "revenue-by-channel"],
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+    results = Path(env["DWH_EVAL_RESULTS"])
+    sha = head_sha()
+    grades = sorted(p.name for p in results.glob("*.grade.json"))
+    assert grades == sorted(
+        f"revenue-by-channel-{sha}-sonnet{side}-r{k}.grade.json"
+        for side in ("", "-noskills")
+        for k in (1, 2, 3)
+    )
+    text = (results / f"summary-{sha}.md").read_text()
+    assert "| revenue-by-channel | sonnet | 2/3 runs pass: PASS | 0/3 runs pass: FAIL | yes |" in text

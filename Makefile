@@ -91,8 +91,8 @@ pre-commit:
 	uvx pre-commit@4.7.0 run --all-files
 
 eval:
-	./evals/run.sh $(SCENARIO) $(if $(REF),--ref $(REF)) $(if $(WITHOUT_SKILLS),--without-skills)
+	./evals/run.sh $(SCENARIO) $(if $(REF),--ref $(REF)) $(if $(WITHOUT_SKILLS),--without-skills) $(if $(RUNS),--runs $(RUNS))
 
 # Every scenario without and with skills at HEAD, graded by an LLM judge (paid claude -p calls).
 eval-all:
-	./evals/run-all.sh
+	./evals/run-all.sh $(if $(RUNS),--runs $(RUNS))
