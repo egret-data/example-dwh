@@ -594,8 +594,11 @@ airflow backfill create --dag-id dbt_ods_shop --from-date 2026-11-02 --to-date 2
 - **Kiểm chứng từng dt** bằng bước 3–4 của `dwh-verify` (số liệu và idempotency), và ghi khoảng ngày cùng bằng chứng
   vào PR.
 
-Điểm còn hở đã biết: skill còn bảo kích hoạt `dbt_pub` với `conf.dt` trước `dbt_trade`. Bản ghi kiểm chứng plan 4
-(follow-up M-5) ghi rằng việc này vô tác dụng với backfill từ DWD trở lên, vì các DIM là bảng trạng thái hiện tại.
+- **Không kích hoạt `dbt_pub` khi dựng lại từ DWD trở lên.** Các DIM của nó là bảng trạng thái hiện tại, không đọc
+  `dt`. Một lần chạy tay `dbt_pub` còn để lại các sự kiện DIM trong hàng đợi của `dbt_trade`, nên mọi đêm sau đó
+  `dbt_trade` chạy song song với `dbt_pub` thay vì chạy sau nó (đã đo;
+  `docs/en/verification/2026-11-05-plan4-followups.md`). Khi buộc phải chạy tay `dbt_pub`, hãy xoá hàng đợi sau đó:
+  `curl -X DELETE <airflow>/api/v2/dags/dbt_trade/assets/queuedEvents`.
 
 ## 7. Ví dụ thực tế: domain trade được xây thế nào
 

@@ -63,7 +63,13 @@ so a manual `dbt_pub` run does not set `dbt_trade`'s day. A manual run of such a
 When producer runs of different days collapse into one run (a failed night, a failed ODS task, a ranged ODS
 backfill), the template renders `MULTIPLE:<day>,<day>` and `get_dt` fails the run: one run builds exactly one dt
 (STD-08-04), so guessing a day would leave the others unbuilt with nothing failing. Rerun the DAG by hand once per
-listed day with `conf.dt`, oldest first (skill `dwh-backfill`).
+listed day with `conf.dt`, oldest first (skill `dwh-backfill`). Both are measured on a live scheduler
+(`docs/en/verification/2026-11-05-plan4-followups.md`): a two-day `dbt_ods_shop` backfill made one `dbt_trade` run
+fail with `MULTIPLE:2026-11-01,2026-11-02`, and the two reruns with `conf.dt` succeeded. A manual `dbt_pub` run
+leaves its DIM Asset events queued for `dbt_trade`. The next night `dbt_trade` gets the night's day, but it starts as
+soon as the ODS events land, alongside that night's `dbt_pub`, and this repeats every night until the queue is
+cleared (`DELETE /api/v2/dags/dbt_trade/assets/queuedEvents`). So do not run `dbt_pub` by hand for a backfill from
+DWD upward (its DIMs are current-state tables and read no `dt`); when it must run, clear the queue afterwards.
 
 Correct:
 
@@ -103,7 +109,8 @@ Source: Spec §4
 A DAG that depends on another schedules on the Airflow Assets that Cosmos emits for the models it reads. It does
 not poll with a sensor. Asset URIs contain the schema of the environment (`<target.schema>_ods` in dev, `ods` in
 prod), so the same code is correct in each environment and a dev run never triggers prod. Prod uses `ods` where the
-example has `dev_ods`. That an event on an asset no DAG consumed yet triggers a consumer is unmeasured (plan 4).
+example has `dev_ods`. The first events ever on fresh Assets triggered `dbt_pub` and `dbt_trade` on a live
+scheduler (plan 4 follow-ups).
 
 Correct:
 
@@ -128,7 +135,9 @@ Source: Spec §4
 
 Set `default_args=DEFAULT_ARGS` from `_common.defaults`, so every DAG has the same owner, retry count and retry
 delay. Tag each DAG with `layer:*` and with `source:*` or `domain:*`. The retries matter: STD-08-04 relies on a retry
-to restore a partition.
+to restore a partition, and on an empty warehouse concurrent tasks race to create a schema (Iceberg namespace).
+Measured: the first nightly run lost the race once in `dbt_ods_shop` (`dev_ods`) and once in `dbt_trade`
+(`dev_dws`), with `ICEBERG_CATALOG_ERROR Failed to create a namespace`; the first retry succeeded both times.
 
 Correct:
 
@@ -215,7 +224,9 @@ Every model and snapshot runs in exactly one DAG, chosen by its selection tag (S
 `_hist` snapshots run in `dags/transform/dbt_pub.py`, which selects `tag:domain:pub` and is scheduled on the ODS
 Assets it reads. Domain models run in `dbt_<domain>`, which selects `tag:domain:<domain>` and is scheduled on the
 Assets it reads (STD-11-04). Snapshots run every day, before the DWD that joins them; inside one DAG, dbt's `ref()`
-order does this, and across DAGs `dbt_trade` also waits on the Asset Cosmos emits for the snapshot. A missed
+order does this, and across DAGs `dbt_trade` also waits on the Asset Cosmos emits for the snapshot. That wait is
+void while `dbt_trade` holds queued DIM events from an earlier `dbt_pub` run (a manual one): then the DWD runs
+alongside the snapshot (measured; STD-11-03 says how to clear the queue). A missed
 snapshot day loses those versions for good, because a backfill cannot recreate history: monitor that each
 snapshot ran.
 

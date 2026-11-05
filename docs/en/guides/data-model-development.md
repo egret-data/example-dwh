@@ -587,9 +587,11 @@ airflow backfill create --dag-id dbt_ods_shop --from-date 2026-11-02 --to-date 2
 - **Verify each dt** with `dwh-verify` steps 3–4 (numbers and idempotency), and record the range and the evidence
   in the PR.
 
-Known gap: the skill also says to trigger `dbt_pub` with `conf.dt` before `dbt_trade`. The plan 4 verification
-record (follow-up M-5) notes that this does nothing for a DWD-upward backfill, because the DIMs are current-state
-tables.
+- **Do not trigger `dbt_pub` for a rebuild from DWD upward.** Its DIMs are current-state tables that read no `dt`.
+  A manual `dbt_pub` run also leaves its DIM events queued for `dbt_trade`, so every later night `dbt_trade` starts
+  beside `dbt_pub` instead of after it (measured; `docs/en/verification/2026-11-05-plan4-followups.md`). When
+  `dbt_pub` must run by hand, clear the queue afterwards:
+  `curl -X DELETE <airflow>/api/v2/dags/dbt_trade/assets/queuedEvents`.
 
 ## 7. Walkthrough: how the trade domain was built
 

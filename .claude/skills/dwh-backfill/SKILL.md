@@ -13,10 +13,16 @@ description: Use when past dt partitions must be rebuilt - after a logic fix, la
 2. **Dry run.** Build one dt on dev and compare its counts with prod.
 3. **Run in order.** Start with the oldest dt and run one dt at a time. Each run replaces its own partition, so
    re-running a DWD, DWS or ADS dt is safe. Re-running a past ODS dt is not always safe: see the red flags.
-   - **Transform DAGs (`dbt_pub`, `dbt_trade`) are asset-triggered.** Trigger them by hand with `conf.dt`, one day
-     at a time, oldest first, and wait for each run to succeed: `airflow dags trigger dbt_pub --conf '{"dt": "<dt>"}'`,
-     then the same for `dbt_trade`. A manual `dbt_pub` run does not set `dbt_trade`'s day: `dbt_trade` takes `dt`
-     only from `dbt_ods_*` runs (their `conf.dt`, else their interval day), so trigger `dbt_trade` yourself.
+   - **Transform DAGs (`dbt_pub`, `dbt_trade`) are asset-triggered.** For a rebuild from DWD upward, trigger only
+     `dbt_trade`, by hand, once per day, oldest first, waiting for each run to succeed:
+     `airflow dags trigger dbt_trade --conf '{"dt": "<dt>"}'`. Do not trigger `dbt_pub`: its DIMs are current-state
+     tables that read no `dt`, so a past day changes nothing there, and `dbt_trade` ignores `dbt_pub`'s `conf.dt`.
+   - **A manual `dbt_pub` run (a DIM logic fix) leaves its DIM events queued for `dbt_trade`** (measured). It does
+     not start `dbt_trade` on its own, and the next night `dbt_trade` still gets the night's day. But that night
+     `dbt_trade` starts as soon as the ODS events land, alongside `dbt_pub`, so its DWD joins a `_hist` snapshot
+     that has not run yet; this repeats every night. After the manual `dbt_pub` run succeeds, clear the queue:
+     `curl -X DELETE <airflow>/api/v2/dags/dbt_trade/assets/queuedEvents` (with an API token), then trigger
+     `dbt_trade` with `conf.dt` as above.
    - **A run failed with `dt MULTIPLE:<day>,<day>`.** Producer runs of different days collapsed into one
      asset-triggered run, which builds only one dt, so it refused. Trigger that DAG by hand once per listed day
      with `conf.dt`, oldest first, waiting for each run; then the windowed DWS of step 4.
@@ -40,6 +46,7 @@ description: Use when past dt partitions must be rebuilt - after a logic fix, la
 | "Rebuild that old event DWD dt from ODS" | Never re-run an event DWD dt older than the ODS retention (400 days, STD-08-08). The pre-hook deletes the partition and the pruned ODS days no longer hold its rows, so the partition ends up empty. Rebuild only DWS/ADS from the existing DWD, or restore ODS first. |
 | "A td backfill reproduces the old values" | `td` sums the DWD days still retained (3 years); once older DWD days are pruned, `td` stops being lifetime and a rebuilt `td` is smaller than the original. |
 | "Pick one day for the collapsed run and move on" | The other listed days stay unbuilt and nothing fails. Rerun every listed day with `conf.dt`, oldest first. |
+| "Trigger `dbt_pub` for that day first, to be safe" | It rebuilds current-state DIMs only and queues DIM events, so every later night's `dbt_trade` runs beside `dbt_pub` until you clear the queue. |
 
 ## Rules
 
