@@ -316,10 +316,12 @@ Each step gets its own implementation plan (writing-plans), executed in order:
 - Measured in plan 4 (Airflow 3.3.2):
   - **Asset-triggered runs and `dt`.** A run of a DAG scheduled on Assets has no cron data interval; its interval is
     the moment it was created. `dt` therefore comes from the triggering events (`_common.dates.ASSET_DT_TEMPLATE`).
-    It is the earliest day over the `dbt_ods_*` events, in this order: the run's own `conf.dt`; otherwise the earliest
-    `conf.dt` of a `dbt_ods_*` producer run; otherwise the earliest business day of a `dbt_ods_*` producer run's data
-    interval. Events of other producers (`dbt_pub`) are ignored, `conf.dt` included. With none of the three, `dt`
-    renders empty and dbt rejects it at once. A live scheduler run confirmed it: a scheduled `dbt_ods_shop` run
+    The run's own `conf.dt` wins. Otherwise each `dbt_ods_*` producer run gives one candidate day: its `conf.dt`,
+    else the business day of its data interval. One distinct candidate is `dt`. Several distinct candidates mean
+    producer runs of different days collapsed into one run; one run builds exactly one `dt`, so the template renders
+    `MULTIPLE:<day>,<day>` (oldest first), `get_dt` fails the run, and the operator reruns each listed day with
+    `conf.dt`, oldest first. Events of other producers (`dbt_pub`) are ignored, `conf.dt` included. With no
+    candidate, `dt` renders empty and dbt rejects it at once. A live scheduler run confirmed it: a scheduled `dbt_ods_shop` run
     triggered `dbt_pub`, then `dbt_trade`, once each, both with the producer's business day.
   - **Snapshots emit Assets.** Cosmos emits one for a snapshot (`dim_pub_customer_hist`), so `dbt_trade` waits on it
     and no extra marker Asset is needed.
@@ -362,3 +364,5 @@ Each step gets its own implementation plan (writing-plans), executed in order:
   lookback window.
 - **Plan 4:** trade reference domain; special-member labels; SCD4 snapshots by source `updated_at`;
   event-date roles; Claude-only evals with an LLM judge
+- **Plan 4 final review:** an asset-triggered run that collapses several business days fails
+  (`MULTIPLE:<day>,<day>`) instead of building the earliest; old event-DWD dts past ODS retention are not rebuilt.

@@ -87,14 +87,24 @@ def test_asset_template_prefers_conf_dt_and_is_empty_without_an_ods_event():
     assert render_asset_template([]) == ""
 
 
-def test_asset_template_renders_the_earliest_day_whatever_the_event_order():
-    # Several dbt_ods_shop runs can collapse into one asset-triggered run; event DWDs read every ODS partition
-    # from dt on, so the earliest day is the safe one. A later day would skip the days before it.
+def test_asset_template_rejects_a_collapsed_run_of_two_days_whatever_the_event_order():
+    # One dbt_trade run builds one dt. Picking either day would leave the other day's partitions unbuilt, so
+    # the template lists every day (oldest first) in a value get_dt rejects: the run fails and the operator
+    # reruns each day with conf.dt.
     nov1 = asset_event("dbt_ods_shop", datetime(2026, 10, 31, 17, 0, tzinfo=UTC))
     nov2 = asset_event("dbt_ods_shop", datetime(2026, 11, 1, 17, 0, tzinfo=UTC))
 
-    assert render_asset_template([nov2, nov1]) == "2026-11-01"
-    assert render_asset_template([nov1, nov2]) == "2026-11-01"
+    assert render_asset_template([nov2, nov1]) == "MULTIPLE:2026-11-01,2026-11-02"
+    assert render_asset_template([nov1, nov2]) == "MULTIPLE:2026-11-01,2026-11-02"
+
+
+def test_asset_template_takes_the_day_when_several_events_share_it():
+    # One ODS run emits an event per table, and two ODS DAGs can run for the same night.
+    orders = asset_event("dbt_ods_shop", datetime(2026, 11, 1, 17, 0, tzinfo=UTC))
+    shops = asset_event("dbt_ods_shop", datetime(2026, 11, 1, 17, 0, tzinfo=UTC))
+    other = asset_event("dbt_ods_crm", datetime(2026, 11, 1, 17, 30, tzinfo=UTC))
+
+    assert render_asset_template([orders, shops, other]) == "2026-11-02"
 
 
 def sdk_event(source_dag_id, interval_start, conf=None, run_id="run"):
@@ -145,12 +155,28 @@ def test_asset_template_takes_a_manual_ods_runs_conf_dt():
     assert render_asset_template([manual_ods]) == "2026-10-20"
 
 
-def test_asset_template_prefers_the_earliest_ods_conf_dt_over_an_interval_day():
+def test_asset_template_rejects_an_ods_conf_dt_collapsed_with_another_day():
+    # An ODS conf.dt and a scheduled interval day are both candidates: neither may silently win.
     scheduled = sdk_event("dbt_ods_shop", NOV2_RUN, run_id="s")
     oct21 = sdk_event("dbt_ods_shop", NOV2_RUN, conf={"dt": "2026-10-21"}, run_id="m1")
     oct20 = sdk_event("dbt_ods_shop", NOV2_RUN, conf={"dt": "2026-10-20"}, run_id="m2")
 
-    assert render_asset_template([scheduled, oct21, oct20]) == "2026-10-20"
+    assert render_asset_template([scheduled, oct21, oct20]) == "MULTIPLE:2026-10-20,2026-10-21,2026-11-02"
+    assert render_asset_template([oct20, scheduled]) == "MULTIPLE:2026-10-20,2026-11-02"
+
+
+def test_asset_template_takes_an_ods_conf_dt_equal_to_the_interval_day():
+    scheduled = sdk_event("dbt_ods_shop", NOV2_RUN, run_id="s")
+    manual = sdk_event("dbt_ods_shop", NOV2_RUN, conf={"dt": "2026-11-02"}, run_id="m")
+
+    assert render_asset_template([manual, scheduled]) == "2026-11-02"
+
+
+def test_asset_template_own_conf_dt_beats_a_collapsed_run():
+    nov1 = sdk_event("dbt_ods_shop", datetime(2026, 10, 31, 17, 0, tzinfo=UTC), run_id="a")
+    nov2 = sdk_event("dbt_ods_shop", NOV2_RUN, run_id="b")
+
+    assert render_asset_template([nov1, nov2], conf={"dt": "2026-11-01"}) == "2026-11-01"
 
 
 def test_asset_template_ignores_a_manual_dbt_pub_runs_conf_dt():

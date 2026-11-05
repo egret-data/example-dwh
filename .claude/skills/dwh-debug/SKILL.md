@@ -24,7 +24,7 @@ description: Use when a dbt build, Airflow task or Trino query fails, or when a 
    | Load | Vietnam-day window against the source timezone; watermark; delete handling |
    | Model | join fan-out; point-in-time SCD join; filters |
    | Metric | modifier or period definition |
-   | Orchestration | dt wiring (`DT_TEMPLATE`); Asset triggers |
+   | Orchestration | dt wiring (`DT_TEMPLATE`); Asset triggers; a collapsed asset run (`dt MULTIPLE:...`) |
 4. **Capture it in a test.** Write a failing test (dbt unit test or data test) that captures the cause, before
    fixing.
 5. **Fix at the lowest wrong layer.** Then rebuild every downstream model for the affected dts (`dwh-backfill`).
@@ -36,6 +36,7 @@ description: Use when a dbt build, Airflow task or Trino query fails, or when a 
 |---------|---------|
 | "Patch the dashboard/ADS to match" | The wrong number stays in DWD and spreads to every other consumer. |
 | "Retry until it's green" | A deterministic error fails again tomorrow. Find it. |
+| "`dt MULTIPLE:2026-11-01,2026-11-02`: retry the run" | It fails again: several ODS days collapsed into one asset-triggered run (STD-11-03). Rerun the DAG by hand once per listed day with `conf.dt`, oldest first (`dwh-backfill`). |
 | "Change the test's expected value" | The test was the evidence. Change it only when the expectation was wrong, and say why. |
 | "Fix quickly, investigate later" | A fix without a located cause is a guess. |
 

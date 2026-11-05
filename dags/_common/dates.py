@@ -16,32 +16,33 @@ DT_TEMPLATE = (
 
 # For a DAG scheduled on Assets. Such a run has no cron data interval of its own (AssetTriggeredTimetable
 # schedules nothing and a run's interval is the moment it was created), so dt is read from the triggering
-# events of `dbt_ods_*` DAGs, in this order:
-#   1. this run's own `conf.dt` (a manual run);
-#   2. the earliest `conf.dt` of a `dbt_ods_*` producer run (a manual ODS run for a past day reaches its
-#      consumers this way);
-#   3. the earliest business day of a `dbt_ods_*` producer run's cron data interval (spec D12).
-# Several producer runs can collapse into one run of this DAG, and event DWDs read every ODS partition from dt
-# on, so the earliest day misses nothing (a later one would skip days); the order of events is not a contract.
+# events of `dbt_ods_*` DAGs:
+#   1. this run's own `conf.dt` (a manual run) wins outright;
+#   2. otherwise each `dbt_ods_*` producer run gives one candidate day: its `conf.dt` (a manual ODS run for a
+#      past day reaches its consumers this way), else the business day of its cron data interval (spec D12).
+# One candidate day (however many events carry it) is dt. Several producer runs of different days can
+# collapse into one run of this DAG (a failed night, a failed ODS task, a ranged ODS backfill). One run builds
+# exactly one dt, and an event DWD keeps only rows of that day, so picking any one day would leave the others
+# unbuilt with nothing failing. The template then renders `MULTIPLE:<day>,<day>` (oldest first), which get_dt
+# rejects: the run fails and the operator reruns each listed day with conf.dt, oldest first (STD-11-03).
 # The SDK's source_dag_run carries plain datetimes, hence astimezone rather than pendulum's in_timezone.
-# Events of other producers (dbt_pub) are ignored, conf.dt included: their own interval is not a business day,
-# and dbt_trade's AND schedule keeps a manual dbt_pub run's events queued until the next night's ODS events,
-# so honouring that run's conf.dt would rebuild the old day instead of the new one. A run with none of the
-# three renders an empty dt, which dbt rejects at once (get_dt validates it).
+# Events of other producers (dbt_pub) are ignored, conf.dt included: their own interval is not a business
+# day. dbt_trade's AND schedule is expected (not measured live) to keep a manual dbt_pub run's events
+# queued until the next night's ODS events, so honouring that run's conf.dt would rebuild the old day, not
+# the new one.
+# A run with no candidate renders an empty dt, which dbt rejects at once (get_dt validates it).
 ASSET_DT_TEMPLATE = (
-    "{% set found = namespace(conf='', day='') %}"
+    "{% set found = namespace(days=[]) %}"
     "{% for events in triggering_asset_events.values() %}{% for event in events %}"
     "{% if (event.source_dag_id or '').startswith('dbt_ods_') and event.source_dag_run %}"
     "{% set run = event.source_dag_run %}"
-    "{% set conf_dt = (run.conf or {}).get('dt') or '' %}"
-    "{% if conf_dt and (not found.conf or conf_dt < found.conf) %}{% set found.conf = conf_dt %}{% endif %}"
-    "{% if not conf_dt %}"
-    "{% set day = run.data_interval_start"
+    "{% set day = (run.conf or {}).get('dt') or run.data_interval_start"
     ".astimezone(macros.dateutil.tz.gettz('" + BUSINESS_TZ + "')).strftime('%Y-%m-%d') %}"
-    "{% if not found.day or day < found.day %}{% set found.day = day %}{% endif %}"
-    "{% endif %}"
+    "{% if day not in found.days %}{% set found.days = found.days + [day] %}{% endif %}"
     "{% endif %}{% endfor %}{% endfor %}"
-    "{{ (dag_run.conf or {}).get('dt') or found.conf or found.day }}"
+    "{% set days = found.days | sort %}"
+    "{{ (dag_run.conf or {}).get('dt') or (days | first if days | length == 1 else "
+    "('MULTIPLE:' ~ days | join(',') if days else '')) }}"
 )
 
 

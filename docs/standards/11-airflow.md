@@ -57,9 +57,13 @@ Use `schedule=daily_vn()` and `start_date=vn_date(...)` from `_common.dates`. `d
 Asia/Ho_Chi_Minh, and each run covers the previous Vietnam day. The dt reaches dbt only through `DT_TEMPLATE`, which
 `dbt_dag_kwargs` already passes as `operator_args`; a DAG does not build its own. `conf.dt` of a manual run or
 backfill overrides the day. A DAG scheduled on Assets has no cron interval of its own, so it passes
-`dt_template=ASSET_DT_TEMPLATE`, which takes the day from the triggering `dbt_ods_*` runs: their earliest `conf.dt`,
-else their earliest interval day. `dbt_pub` and `dbt_trade` do this. Events of other producers are ignored, so a
-manual `dbt_pub` run does not set `dbt_trade`'s day. A manual run of such a DAG must pass `conf.dt`.
+`dt_template=ASSET_DT_TEMPLATE`, which takes the day from the triggering `dbt_ods_*` runs: each gives one candidate
+day, its `conf.dt`, else its interval day. `dbt_pub` and `dbt_trade` do this. Events of other producers are ignored,
+so a manual `dbt_pub` run does not set `dbt_trade`'s day. A manual run of such a DAG must pass `conf.dt`, which wins.
+When producer runs of different days collapse into one run (a failed night, a failed ODS task, a ranged ODS
+backfill), the template renders `MULTIPLE:<day>,<day>` and `get_dt` fails the run: one run builds exactly one dt
+(STD-08-04), so guessing a day would leave the others unbuilt with nothing failing. Rerun the DAG by hand once per
+listed day with `conf.dt`, oldest first (skill `dwh-backfill`).
 
 Correct:
 
