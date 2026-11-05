@@ -191,20 +191,35 @@ class PassThroughTypes:
         )
 
 
-def metric_type(wh: Warehouse, metric: str) -> str:
+INTEGER_TYPES = ("tinyint", "smallint", "integer", "int", "bigint")
+
+
+def metric_type(wh: Warehouse, metric: str, measure: str | None = None) -> str:
+    """The Trino result type of a stored metric; `measure` is the measure's declared type, if known.
+
+    count -> bigint; min/max keep the measure type; sum of an integer type -> bigint and sum of
+    decimal(p, s) -> decimal(38, s) (Trino widens the precision, keeps the scale). Anything else is refused.
+    """
     if metric in wh.calculated:
         return "double"
     atomic = wh.atomic[wh.derived[metric]["atomic"]]
-    if atomic["aggregation"] in ("count", "count_distinct"):
+    aggregation, name = atomic["aggregation"], atomic["name"]
+    if aggregation in ("count", "count_distinct"):
         return "bigint"
-    measure = data_type(atomic["name"])
-    if atomic["aggregation"] in ("min", "max") and measure != "varchar":
+    measure = measure or data_type(name)
+    if aggregation in ("min", "max"):
         return measure
-    # Trino widens sum(decimal(p, s)) to decimal(38, s) and keeps sum(bigint) as bigint.
-    scale = re.fullmatch(r"decimal\(\d+, (\d+)\)", measure)
+    if aggregation != "sum":
+        raise ScaffoldError(f"{metric}: cannot type a {aggregation} metric")
+    if measure in INTEGER_TYPES:
+        return "bigint"
+    scale = re.fullmatch(r"decimal\(\s*\d+\s*,\s*(\d+)\s*\)", measure)
     if scale:
         return f"decimal(38, {scale.group(1)})"
-    return measure if measure == "bigint" else "decimal(38, 4)"
+    raise ScaffoldError(
+        f"{metric}: cannot type sum({name}) of a {measure} measure; sum needs an integer or decimal measure. "
+        f"If {name} is numeric, declare its data_type in the upstream model's .yml"
+    )
 
 
 def column(name: str, *, contract: bool, tests=(), meta=None, dtype: str | None = None) -> dict:
@@ -587,7 +602,14 @@ def _dws(name, parts, wh, grain, metrics, upstream, watermark, event_at, types=N
             expression += f" filter (where {' and '.join(conditions)})"
         select.append((expression, metric))
         metric_columns.append(
-            column(metric, contract=True, meta={"metric": metric}, dtype=metric_type(wh, metric))
+            column(
+                metric,
+                contract=True,
+                meta={"metric": metric},
+                dtype=metric_type(
+                    wh, metric, types.upstream_type(upstream, atomic["name"]) if types else None
+                ),
+            )
         )
     sql = DWS_SQL.substitute(
         config=PARTITION_CONFIG,

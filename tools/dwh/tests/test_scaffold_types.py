@@ -9,7 +9,7 @@ import yaml
 
 from dwh.cli import main
 from dwh.column_types import ColumnTypes, load_column_types
-from dwh.scaffold import scaffold
+from dwh.scaffold import ScaffoldError, metric_type, scaffold
 from dwh.warehouse import load_warehouse
 
 REPO = Path(__file__).resolve().parents[3]
@@ -215,3 +215,105 @@ def test_the_real_project_declares_payment_id_as_varchar():
 
     assert types.upstream_type(["ods_shop_payments_di"], "payment_id") == "varchar"
     assert types.upstream_type(["ods_shop_payments_di"], "order_id") == "bigint"
+
+
+def with_measure(name: str, aggregation: str):
+    """A warehouse mutation adding atomic `name` and its 1d derived metric `<name>_<aggregation>_1d`."""
+
+    def mutate(files):
+        files["metrics"]["atomic"].append(
+            {
+                "name": name,
+                "process": "order",
+                "description": "A measure.",
+                "aggregation": aggregation,
+                "additivity": "additive" if aggregation == "sum" else "non_additive",
+            }
+        )
+        files["metrics"]["derived"].append(
+            {
+                "name": f"{name}_{aggregation}_1d",
+                "atomic": name,
+                "period": "1d",
+                "grain": ["customer"],
+                "description": "Per customer per day.",
+            }
+        )
+
+    return mutate
+
+
+@pytest.mark.parametrize(
+    ("measure", "aggregation", "declared", "expected"),
+    [
+        ("order_status", "max", None, "varchar"),
+        ("order_status", "min", None, "varchar"),
+        ("first_order_date", "min", None, "date"),
+        ("paid_at", "max", None, "timestamp(6) with time zone"),
+        ("order_qty", "max", "integer", "integer"),
+        ("order_qty", "sum", "integer", "bigint"),
+        ("order_qty", "sum", "smallint", "bigint"),
+        ("order_qty", "sum", "tinyint", "bigint"),
+        ("order_qty", "sum", "bigint", "bigint"),
+        ("order_amt", "sum", None, "decimal(38, 2)"),
+        ("order_amt", "sum", "decimal(10, 0)", "decimal(38, 0)"),
+        ("order_amt", "sum", "decimal(18,4)", "decimal(38, 4)"),
+        ("order_cnt", "sum", None, "bigint"),
+    ],
+)
+def test_metric_type_is_explicit_for_every_aggregation(
+    make_warehouse, measure, aggregation, declared, expected
+):
+    wh = load_warehouse(make_warehouse(mutate=with_measure(measure, aggregation)))
+
+    assert metric_type(wh, f"{measure}_{aggregation}_1d", declared) == expected
+
+
+@pytest.mark.parametrize(
+    ("measure", "declared"),
+    [("order_status", None), ("order_rate", "double"), ("order_rate", "real"), ("order_amt", "varchar")],
+)
+def test_sum_of_a_non_integer_non_decimal_measure_is_refused(make_warehouse, measure, declared):
+    wh = load_warehouse(make_warehouse(mutate=with_measure(measure, "sum")))
+
+    with pytest.raises(ScaffoldError, match=rf"sum\({measure}\).*integer or decimal"):
+        metric_type(wh, f"{measure}_sum_1d", declared)
+
+
+def test_dws_metric_type_uses_the_upstream_declared_measure_type(make_warehouse, tmp_path):
+    wh = load_warehouse(make_warehouse(mutate=with_measure("order_qty", "sum")))
+    write_yml(
+        tmp_path / "models/dwd/trade/_trade__models.yml",
+        {
+            "version": 2,
+            "models": [
+                {"name": "dwd_trade_order_di", "columns": [{"name": "order_qty", "data_type": "integer"}]}
+            ],
+        },
+    )
+
+    files = scaffold(
+        "dws_trade_customer_1d",
+        wh,
+        project_dir="",
+        grain=["customer_key"],
+        metrics=["order_qty_sum_1d"],
+        upstream=["dwd_trade_order_di"],
+        column_types=load_column_types(tmp_path),
+    )
+
+    assert column_type(files["models/dws/trade/dws_trade_customer_1d.yml"], "order_qty_sum_1d") == "bigint"
+
+
+def test_dws_refuses_a_sum_it_cannot_type(make_warehouse):
+    wh = load_warehouse(make_warehouse(mutate=with_measure("order_status", "sum")))
+
+    with pytest.raises(ScaffoldError, match="declare its data_type"):
+        scaffold(
+            "dws_trade_customer_1d",
+            wh,
+            project_dir="",
+            grain=["customer_key"],
+            metrics=["order_status_sum_1d"],
+            upstream=["dwd_trade_order_di"],
+        )
