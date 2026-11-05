@@ -91,10 +91,16 @@ only require that a description exists.
 Correct:
 
 ```yaml
+# dwd_trade_order_di.yml
 columns:
   - name: order_amt
     description: Order amount in VND, tax included. Never null; 0 for a free order.
-    data_type: decimal(38, 4)
+    data_type: decimal(18, 2)
+# dws_trade_customer_1d.yml: Trino widens sum(decimal(18, 2)) to decimal(38, 2); the scale, so the unit, stays.
+columns:
+  - name: order_amt_sum_1d
+    description: Sum of order_amt in VND, tax included, for orders placed on dt. Never null.
+    data_type: decimal(38, 2)
 ```
 
 Incorrect:
