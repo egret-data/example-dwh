@@ -8,7 +8,8 @@ and writes summary-<sha>.md there: per scenario, the result with and without ski
 discriminates (passes with skills, fails without).
 
 Several agent runs of one side (`run.sh --runs N` writes `-r<k>` answers) are decided by strict majority: the
-side passes when more than half of its runs pass, so a tie fails.
+side passes when more than half of its runs pass and fails when more than half fail. An exact tie (an even
+number of runs) is TIE: neither a pass nor a fail, and never counted as discriminating.
 """
 
 import json
@@ -22,17 +23,17 @@ RUN = re.compile(r"-r(\d+)$")
 
 
 def side(runs: list[dict]) -> dict:
-    """One side of a scenario: its runs and the majority verdict (more than half of the runs passed)."""
+    """One side of a scenario: its runs and the majority verdict, PASS, FAIL or (an exact tie) TIE."""
     passing = sum(run["passed"] for run in runs)
-    return {"passed": passing * 2 > len(runs), "passing": passing, "runs": runs}
+    verdict = "PASS" if passing * 2 > len(runs) else "FAIL" if passing * 2 < len(runs) else "TIE"
+    return {"passed": verdict == "PASS", "verdict": verdict, "passing": passing, "runs": runs}
 
 
 def cell(result: dict | None) -> str:
     if result is None:
         return "missing"
     if len(result["runs"]) > 1:
-        verdict = "PASS" if result["passed"] else "FAIL"
-        return f"{result['passing']}/{len(result['runs'])} runs pass: {verdict}"
+        return f"{result['passing']}/{len(result['runs'])} runs pass: {result['verdict']}"
     result = result["runs"][0]
     met = sum(e["met"] for e in result["pass"])
     hit = sum(e["hit"] for e in result["fail"])
@@ -61,7 +62,10 @@ def rows(results: Path, sha: str) -> dict[tuple[str, str], dict]:
         found.setdefault((scenario, model), {"with": None, "without": None})[which] = side(graded)
     for row in found.values():
         row["discriminates"] = bool(
-            row["with"] and row["without"] and row["with"]["passed"] and not row["without"]["passed"]
+            row["with"]
+            and row["without"]
+            and row["with"]["verdict"] == "PASS"
+            and row["without"]["verdict"] == "FAIL"
         )
     return found
 

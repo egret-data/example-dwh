@@ -270,7 +270,21 @@ def test_a_tie_between_runs_is_not_a_majority(tmp_path):
     rows = summary.rows(tmp_path, "abc1234")
 
     assert rows[("demo", "sonnet")]["with"]["passed"] is False
+    assert rows[("demo", "sonnet")]["with"]["verdict"] == "TIE"
     assert len(rows[("demo", "sonnet")]["with"]["runs"]) == 2
+
+
+def test_a_tied_baseline_does_not_discriminate(tmp_path):
+    """A baseline that passes half its runs is not a FAIL, so the scenario does not discriminate (I-7)."""
+    for k in (1, 2, 3):
+        write_grade(tmp_path / f"demo-abc1234-sonnet-r{k}.grade.json", [True], [False])
+    write_grade(tmp_path / "demo-abc1234-sonnet-noskills-r1.grade.json", [True], [False])
+    write_grade(tmp_path / "demo-abc1234-sonnet-noskills-r2.grade.json", [False], [False])
+
+    rows = summary.rows(tmp_path, "abc1234")
+
+    assert rows[("demo", "sonnet")]["discriminates"] is False
+    assert "| demo | sonnet | 3/3 runs pass: PASS | 1/2 runs pass: TIE | no |" in summary.build_table(rows)
 
 
 def test_failures_count_the_runs_that_missed_each_criterion(tmp_path):
@@ -364,6 +378,18 @@ def test_run_sh_writes_one_numbered_answer_per_run(tmp_path):
     assert not Path(f"{base}.md").exists()
 
 
+def test_run_sh_removes_the_runs_of_an_earlier_invocation(tmp_path):
+    env = eval_env(tmp_path)
+    run = ["bash", str(REPO / "evals" / "run.sh"), "revenue-by-channel", "--runs"]
+    base = Path(env["DWH_EVAL_RESULTS"]) / f"revenue-by-channel-{head_sha()}-sonnet"
+
+    assert subprocess.run([*run, "3"], capture_output=True, text=True, env=env).returncode == 0
+    Path(f"{base}-r3.grade.json").write_text("{}")
+    assert subprocess.run([*run, "1"], capture_output=True, text=True, env=env).returncode == 0
+
+    assert sorted(p.name for p in base.parent.iterdir()) == [f"{base.name}-r1.md"]
+
+
 @pytest.mark.parametrize("runs", ["0", "x", "-1"])
 def test_run_sh_rejects_a_bad_run_count(tmp_path, runs):
     result = subprocess.run(
@@ -374,7 +400,7 @@ def test_run_sh_rejects_a_bad_run_count(tmp_path, runs):
     )
 
     assert result.returncode == 2
-    assert "--runs" in result.stderr
+    assert "--runs takes a positive integer" in result.stderr
 
 
 def test_run_all_grades_every_run_and_summarises_by_majority(tmp_path):

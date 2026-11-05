@@ -30,8 +30,9 @@ make eval-all [RUNS=N]
   skills, and whether the scenario discriminates (passes with skills, fails without).
 - `--runs N` (on `run.sh` and `run-all.sh`) runs the agent N times per side and writes `<answer>-r1.md` …
   `<answer>-rN.md`; `run-all.sh` grades each run. `summary.py` decides each side by strict majority of its runs
-  (more than half pass; a tie fails) and shows `k/n runs pass`; the failed-criteria list counts the runs that
-  missed each criterion. Without `--runs`, one run writes `<answer>.md` as before.
+  and shows `k/n runs pass`. An exact tie is `TIE`: neither a pass nor a fail, and never discriminating, so use an
+  odd N. The failed-criteria list counts the runs that missed each criterion. Each `run.sh` call first removes that
+  side's earlier answers and grades at the same sha. Without `--runs`, one run writes `<answer>.md` as before.
 - `make eval-all` (`run-all.sh`) runs every scenario both ways at `HEAD`, grades and summarises. Each agent run and
   each judge call is a paid `claude -p` call: per scenario, 2 x N agent runs and 2 x N x 3 judge calls (N = 1
   without `--runs`). `--scenario <name>` (repeatable) limits the run to those scenarios.

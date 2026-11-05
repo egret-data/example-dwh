@@ -61,6 +61,8 @@ if [ -n "$RUNS" ]; then
   OUTS=()
   for K in $(seq 1 "$RUNS"); do OUTS+=("$BASE-r$K.md"); done
 fi
+# Remove this side's earlier answers and grades at this sha, so summary.py never mixes runs of two invocations.
+rm -f "$BASE.md" "$BASE.grade.json" "$BASE"-r[0-9]*.md "$BASE"-r[0-9]*.grade.json
 for OUT in "${OUTS[@]}"; do
   (cd "$WORK/repo" && printf '%s\n' "$PROMPT" \
     | claude -p --setting-sources project --model "$MODEL" --allowedTools "Read,Glob,Grep") > "$OUT"
